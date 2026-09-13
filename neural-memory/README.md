@@ -447,3 +447,37 @@ Write-gate pretraining uses human-gold utility as a weak teacher, then freezes t
 recall training. Neither a write label nor a recall instruction is present at inference. Use
 `--write-aux-weight` to test simultaneous teacher training, or omit pretraining to reproduce the
 failed pure end-to-end credit condition.
+
+## Phase 13: real conversation write-before-revisit
+
+Phase 13 removes the constructed title/body split. It reuses the privacy-local Phase 6 artifact:
+eight actual earlier user turns are candidate traces and a naturally occurring turn at least two
+steps later is the recall context. The write gate sees each old turn but no future query and stores
+only two, four, or six of the eight traces.
+
+```bash
+# Uses the already ignored artifacts/claude_global_feedback.pt tensor file.
+uv run python train_revisit_write_recall.py \
+  --write-steps 1000 --recall-steps 1000 \
+  --keep-ratio 0.25 --memory-dim 64 --seed 7
+
+# Negative controls.
+uv run python train_revisit_write_recall.py \
+  --write-steps 0 --recall-steps 1000 --keep-ratio 0.25 --seed 7
+uv run python train_revisit_write_recall.py \
+  --shuffle-write-teacher --keep-ratio 0.25 --seed 7
+```
+
+The weak write teacher is derived from future lexical reuse during training only. At inference,
+the 106,946-parameter layer receives no `write`, `recall`, trace ID, or future-utility instruction;
+it executes its learned hard capacity decision and later ranks only the surviving 64d traces.
+
+The character-hash artifact is a representation negative control:
+
+```bash
+uv run python prepare_contextbench_features.py --output artifacts/contextbench.pt
+```
+
+Source: [ContextBench](https://huggingface.co/datasets/Contextbench/ContextBench). Its accompanying
+code repository is Apache-2.0; embedded code spans remain subject to their source repository
+licenses and are therefore kept local.

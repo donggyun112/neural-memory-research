@@ -8,6 +8,8 @@ import torch
 from torch import Tensor, nn
 from torch.nn import functional as F
 
+from .context_memory import SelectiveTraceState, SelectiveWriteRecallMemory
+
 
 CreditMode = Literal["candidate", "outcome", "joint"]
 
@@ -136,6 +138,53 @@ class MultiTraceActionMemory(nn.Module):
     def strengths(logits: Tensor) -> Tensor:
         probabilities = F.softmax(logits, dim=-1)
         return probabilities[..., 1] - probabilities[..., 2]
+
+
+class SelectiveWriteActionMemory(nn.Module):
+    """Write a bounded candidate set before a later outcome chooses its update action."""
+
+    def __init__(
+        self, feature_dim: int, memory_dim: int = 64, keep_ratio: float = 0.9
+    ) -> None:
+        super().__init__()
+        self.writer = SelectiveWriteRecallMemory(feature_dim, memory_dim, keep_ratio)
+        self.outcome_projection = nn.Linear(feature_dim, memory_dim)
+        self.candidate_head = nn.Linear(memory_dim, 2)
+        self.outcome_head = nn.Linear(memory_dim, 2)
+        self.relation_head = nn.Sequential(
+            nn.Linear(memory_dim * 4, memory_dim),
+            nn.GELU(),
+            nn.Linear(memory_dim, 2),
+        )
+
+    def write(
+        self, candidate_features: Tensor, write_context: Tensor, masks: Tensor
+    ) -> SelectiveTraceState:
+        return self.writer.write(candidate_features, write_context, masks)
+
+    def act(self, state: SelectiveTraceState, outcome_features: Tensor) -> Tensor:
+        outcome = torch.tanh(self.outcome_projection(outcome_features))[:, None, :]
+        outcome = outcome.expand_as(state.traces)
+        relation = self.writer._relation(state.traces, outcome)
+        action_logits = (
+            self.candidate_head(state.traces)
+            + self.outcome_head(outcome)
+            + self.relation_head(relation)
+        )
+        selected = state.strengths
+        ignore_logits = (1.0 - 2.0 * selected) * 8.0
+        action_logits = action_logits + (2.0 * selected - 1.0)[..., None] * 8.0
+        return torch.cat((ignore_logits[..., None], action_logits), dim=-1)
+
+    def forward(
+        self,
+        candidate_features: Tensor,
+        write_context: Tensor,
+        outcome_features: Tensor,
+        masks: Tensor,
+    ) -> tuple[Tensor, SelectiveTraceState]:
+        state = self.write(candidate_features, write_context, masks)
+        return self.act(state, outcome_features), state
 
 
 class DecoupledMultiTraceMemory(nn.Module):

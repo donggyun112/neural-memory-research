@@ -736,3 +736,59 @@ teacher. It shows that the proposed roadmap works—weak-label write imitation f
 recall learning—and that pure end-to-end credit is currently insufficient. The temporal split is
 also constructed from one issue rather than two independently occurring events. The next stronger
 test needs real multi-event conversations where an early observation is reused or corrected later.
+
+# Phase 13: real conversation write-before-revisit
+
+Date: 2026-09-13
+
+This phase uses the existing privacy-local Phase 6 corpus rather than splitting one event. Each
+example contains eight actual earlier user turns and one natural user turn occurring at least two
+turns later. A weak teacher identifies the earlier turn whose lexical anchors are uniquely reused;
+the write gate sees only each candidate turn and must make a hard capacity decision before the
+later turn is available. The later turn then recalls among surviving 64d traces. The artifact has
+775 train and 574 held-out-project examples, and no raw conversation text.
+
+The model has 106,946 parameters. Training follows the successful curriculum from Phase 12:
+future reuse weakly supervises the write gate, the gate is frozen, and final top-1 loss trains the
+recall head only on episodes where the target survived. At inference there is no explicit memory
+instruction, trace ID, future query, or teacher label.
+
+Five-seed results use seeds 7, 17, 27, 37, and 47:
+
+| Stored capacity | Target retained | Write balanced accuracy | Top-1 recall | Shuffled recall Top-1 |
+| --- | ---: | ---: | ---: | ---: |
+| 6 / 8 traces (75%) | 0.8923 +/- 0.0085 | 0.5813 +/- 0.0049 | **0.6725 +/- 0.0044** | 0.3491 +/- 0.0039 |
+| 2 / 8 traces (25%) | **0.5906 +/- 0.0109** | **0.6946 +/- 0.0062** | 0.5627 +/- 0.0147 | 0.3369 +/- 0.0045 |
+
+At 25% capacity the writer retained the future target 59.1% of the time versus a 25% random
+capacity expectation. Conditional on the target surviving, recall top-1 was approximately
+0.9527 +/- 0.0086; most remaining failures therefore came from write selection rather than later
+retrieval. Correct later context beat shuffled context by 0.2258 +/- 0.0131 top-1 in every seed.
+A seed-7 midpoint kept four traces, retained 0.7631 of targets, and reached 0.6568 top-1.
+
+Controls reject a random-capacity explanation. At 25% capacity an untrained writer retained 0.2125
+and reached 0.1794 top-1. Training the writer on uniformly random target positions raised those only
+to 0.3293 and 0.3101, while the real future-reuse teacher produced 0.5976 and 0.5749 for the same
+seed. The earlier unlimited BGE selector remains stronger at 0.8002 top-1, quantifying the cost of
+discarding six of eight turns before the query exists.
+
+This is the clearest POC so far for the requested model layer: it decides what to store from input,
+persists a compact bounded state, and later emits associated traces from an ordinary conversational
+context. It is still imitation rather than autonomous importance discovery. The teacher defines
+utility through lexical recurrence, and the corpus contains only Claude history rather than the
+newer Codex sessions. The next data step is a cross-format revisit extractor and non-lexical utility
+labels from corrections, accepted actions, and downstream task success.
+
+## Real repair update-action negative branch
+
+A separate experiment encoded 371 genuine Claude/Codex repair chains with Gemma: 2,879 mutation
+traces across 62 sessions and 18 projects. The writer saw a mutation before the combined later
+failure/pass outcome; the after-model predicted `ignore`, `strengthen`, or `revise`. Binary active
+recall stayed near chance (0.5079 balanced accuracy versus 0.5041 with shuffled outcomes). Coupled
+and decoupled three-action variants also lacked a stable shuffle-sensitive gain across seeds.
+
+The failure is informative rather than a model-size result. Repair labels are constructed from
+whether a mutation occurs before or after the failing verification, but the encoded candidate omits
+that observable temporal boundary. Without it, visually similar edit payloads can receive opposite
+actions. Further tuning this branch is not justified until candidate features include the state
+available at the actual write moment.

@@ -3,7 +3,11 @@ from __future__ import annotations
 import pytest
 import torch
 
-from neural_memory.repair_memory import DecoupledMultiTraceMemory, MultiTraceActionMemory
+from neural_memory.repair_memory import (
+    DecoupledMultiTraceMemory,
+    MultiTraceActionMemory,
+    SelectiveWriteActionMemory,
+)
 
 
 def test_joint_credit_outputs_one_action_per_trace() -> None:
@@ -45,3 +49,18 @@ def test_decoupled_memory_composes_valid_three_class_logits() -> None:
     assert action.shape == (2, 3, 2)
     assert logits.shape == (2, 3, 3)
     assert torch.allclose(logits.exp().sum(dim=-1), torch.ones(2, 3))
+
+
+def test_selective_write_action_memory_discards_traces_before_update() -> None:
+    model = SelectiveWriteActionMemory(feature_dim=8, memory_dim=4, keep_ratio=0.5)
+    masks = torch.ones(2, 4, dtype=torch.bool)
+    logits, state = model(
+        torch.randn(2, 4, 8),
+        torch.zeros(2, 8),
+        torch.randn(2, 8),
+        masks,
+    )
+    assert logits.shape == (2, 4, 3)
+    assert state.selected.sum(dim=1).tolist() == [2, 2]
+    predictions = logits.argmax(dim=-1)
+    assert bool((predictions[~state.selected] == 0).all())
