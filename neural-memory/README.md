@@ -481,3 +481,33 @@ uv run python prepare_contextbench_features.py --output artifacts/contextbench.p
 Source: [ContextBench](https://huggingface.co/datasets/Contextbench/ContextBench). Its accompanying
 code repository is Apache-2.0; embedded code spans remain subject to their source repository
 licenses and are therefore kept local.
+
+## Phase 14: paper-grade ablations and public validation
+
+The experiment matrix and claim boundaries are specified in [`PAPER.md`](PAPER.md). The ablation
+runner compares BCE/listwise write objectives, online causal features, low-rate joint training,
+random teachers, and untrained controls while reporting both ordinary and target-position-macro
+metrics:
+
+```bash
+uv run python run_revisit_ablation.py \
+  --variants staged_bce,staged_listwise,causal_bce,causal_listwise,causal_listwise_joint \
+  --seeds 7,17,27,37,47 --keep-ratio 0.25
+```
+
+For the public cross-source test, download the official cleaned LongMemEval-S JSON, convert its
+evidence sessions into query-hidden eight-way write episodes, then run the same layer:
+
+```bash
+curl -L --fail -o artifacts/longmemeval_s_cleaned.json \
+  https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned/resolve/main/longmemeval_s_cleaned.json
+uv run --group text python prepare_longmemeval_features.py --device mps
+uv run python run_revisit_ablation.py \
+  --features artifacts/longmemeval_bge.pt --device mps \
+  --variants staged_bce,causal_bce --seeds 7,17,27,37,47
+```
+
+This is an adaptation of LongMemEval rather than its official QA score: the question is hidden at
+write time, one evidence session is mixed with seven deterministic distractors, and whole question
+IDs are held out. `train_fast_weight_revisit.py` is a second architecture whose persistent memory is
+an online-updated associative matrix instead of a set of trace slots.

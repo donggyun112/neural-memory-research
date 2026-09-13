@@ -792,3 +792,84 @@ whether a mutation occurs before or after the failing verification, but the enco
 that observable temporal boundary. Without it, visually similar edit payloads can receive opposite
 actions. Further tuning this branch is not justified until candidate features include the state
 available at the actual write moment.
+
+# Phase 14: objective, causal-signal, and public-data ablations
+
+Date: 2026-09-13
+
+This phase turns the Phase 13 result into a falsifiable comparison matrix. Five seeds use the same
+775/574 held-out-project split, two-of-eight capacity, 1,000 write steps, and 1,000 recall steps.
+Reported dispersions are sample standard deviations. Position-macro metrics average the eight target
+positions equally, so the corpus's recency skew cannot inflate them. The first objective sweep ran
+on MPS; a complete CPU repeat and causal-component dissection follows it.
+
+| Claude condition | Target retained | Position-macro retained | Top-1 | Position-macro Top-1 | Query-shuffle gap |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Staged BCE | 0.5906 +/- 0.0121 | 0.6064 +/- 0.0112 | 0.5627 +/- 0.0164 | 0.5800 +/- 0.0162 | 0.2258 +/- 0.0146 |
+| Listwise write loss | 0.5812 +/- 0.0135 | - | 0.5502 +/- 0.0187 | - | 0.2094 +/- 0.0132 |
+| **Position + novelty + surprise, BCE** | **0.6279 +/- 0.0097** | **0.6246 +/- 0.0102** | **0.5882 +/- 0.0085** | **0.5897 +/- 0.0086** | **0.2331 +/- 0.0063** |
+| Causal signals + listwise | 0.6028 +/- 0.0115 | - | 0.5589 +/- 0.0149 | - | 0.1920 +/- 0.0098 |
+| Causal listwise + 500 joint steps | 0.6063 +/- 0.0084 | - | 0.5690 +/- 0.0120 | - | 0.2195 +/- 0.0225 |
+
+| CPU causal dissection | Target retained | Position-macro retained | Top-1 | Position-macro Top-1 | Query-shuffle gap |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Staged BCE | 0.5920 +/- 0.0110 | 0.6086 +/- 0.0111 | 0.5686 +/- 0.0205 | 0.5861 +/- 0.0214 | 0.2254 +/- 0.0077 |
+| Causal position only | 0.6077 +/- 0.0141 | 0.6073 +/- 0.0117 | 0.5742 +/- 0.0115 | 0.5771 +/- 0.0120 | 0.2310 +/- 0.0077 |
+| Causal surprise only | 0.6014 +/- 0.0221 | 0.6173 +/- 0.0216 | 0.5774 +/- 0.0128 | 0.5934 +/- 0.0127 | 0.2380 +/- 0.0062 |
+| **Position + novelty + surprise, BCE** | **0.6195 +/- 0.0101** | **0.6203 +/- 0.0104** | **0.5878 +/- 0.0075** | 0.5894 +/- 0.0082 | 0.2328 +/- 0.0036 |
+
+The adopted causal BCE layer has 107,522 parameters. Versus staged BCE, target retention improves
+by 0.0373 on MPS and 0.0275 on CPU; top-1 improves by 0.0254 and 0.0192. Position-macro retention
+also rises on both backends, rejecting an explanation based only on the non-uniform target-position
+distribution. Direct heuristics are much weaker: at 25% capacity recency retains 0.3885, causal
+novelty 0.3571, and causal surprise 0.3275.
+The neural gain therefore requires the learned interaction between frozen semantic features and the
+causal signals. Listwise supervision and the tested joint schedule are clean negative results.
+Using causal surprise directly as a teacher-free write rule retains 0.3275 and reaches 0.3223 BGE
+top-1 on Claude; on LongMemEval both are 0.2327, below random capacity. Surprise is therefore a
+useful auxiliary signal after weak supervision, but it does not yet solve what-to-store by itself.
+
+The public validation adapts the official cleaned LongMemEval-S histories. Each non-abstention
+evidence session becomes a positive write target mixed with seven deterministic non-evidence
+sessions. The question remains hidden until recall, target position is deterministically randomized,
+and complete question IDs are held out. This yields 688 training and 202 evaluation episodes from
+890 evidence targets across information extraction, preference, multi-session, temporal reasoning,
+and knowledge-update questions. This is not the official LongMemEval QA protocol or score.
+
+| LongMemEval-S adapted condition | Target retained | Position-macro retained | Top-1 | Position-macro Top-1 | Query-shuffle gap |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Random capacity expectation | 0.2500 | 0.2500 | - | - | - |
+| Recency / novelty / surprise heuristics | 0.2277 / 0.2327 / 0.2327 | 0.2500 / 0.2120 / 0.2146 | - | - | - |
+| **Staged BCE, five seeds** | **0.4030 +/- 0.0263** | **0.4058 +/- 0.0285** | 0.3198 +/- 0.0254 | 0.3227 +/- 0.0270 | **0.0455 +/- 0.0187** |
+| Causal BCE, five seeds | 0.4069 +/- 0.0137 | 0.4104 +/- 0.0165 | **0.3287 +/- 0.0090** | **0.3336 +/- 0.0085** | **0.0614 +/- 0.0103** |
+| Untrained writer, seed 7 | 0.2723 | - | 0.1683 | - | 0.0149 |
+| Random write teacher, seed 7 | 0.2673 | - | 0.1782 | - | 0.0099 |
+| Query-visible full BGE cosine | 0.9406 at two slots | - | 0.8465 | - | - |
+
+All five staged-BCE seeds have a positive correct-query advantage. The external retention result is
+substantially above random and survives position macro-averaging; untrained and random-teacher
+controls remain near capacity chance. The result is weaker than on the private natural corpus, and
+causal features stabilize more than they improve retention. This is useful evidence against a
+single-corpus artifact, but not proof of autonomous importance: oracle evidence IDs remain weak
+training teachers and the benchmark sessions are LLM-simulated and human-edited.
+
+The literature-directed next branch is `FastWeightRecallMemory`. Following the parametric-state view
+of TTT and Titans, it predicts a candidate value from the current associative matrix, exposes the
+online prediction error as surprise, and delta-updates the matrix only for hard-selected candidates.
+At memory width 12, its 12-by-12 matrix uses 144 persistent scalars, close to the two selected 64d
+traces' 128 scalars. It has only 14,463 trainable parameters. Across five Claude seeds it retains
+0.6066 +/- 0.0250, reaches 0.5575 +/- 0.0211 top-1, and has a 0.2178 +/- 0.0121 shuffle gap. The
+matrix therefore learns genuine query-dependent association at roughly equal state budget and with
+far fewer parameters, but it does not beat the trace model's recall. On LongMemEval seed 7 it reaches
+0.3911 retention and 0.2525 top-1, also below the trace layer's 0.3960 and 0.3218. It remains an
+architecturally interesting efficiency branch, not the adopted accuracy model.
+
+Increasing the fast-weight width from 12 to 64 raises persistent state from 144 to 4,096 scalars and
+parameters from 14,463 to 90,435, but seed-7 retention/top-1 fall from 0.6307/0.5732 to
+0.6063/0.5662. More matrix capacity is therefore not a justified next step without a better update
+objective or retention rule.
+
+An input-dependent retention/forget gate was then trained through recall loss at width 12. Its seed-7
+retention was 0.6115, but top-1 and the shuffle gap fell to 0.5557 and 0.1951 versus 0.5732 and
+0.2213 for fixed learned decay. This adaptive-forgetting formulation is rejected at screening stage;
+the negative result suggests that 775 training episodes do not identify a richer retention policy.
