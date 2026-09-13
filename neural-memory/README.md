@@ -511,3 +511,35 @@ This is an adaptation of LongMemEval rather than its official QA score: the ques
 write time, one evidence session is mixed with seven deterministic distractors, and whole question
 IDs are held out. `train_fast_weight_revisit.py` is a second architecture whose persistent memory is
 an online-updated associative matrix instead of a set of trace slots.
+
+## Phase 15: generator utility and the training-free length control
+
+Every earlier phase scored the memory layer against its own activation metrics. This phase asks
+whether the written memory changes a frozen generator's likelihood of the human-written gold answer,
+and it only reports that comparison after the measurement proves it can detect a known-good memory.
+
+```bash
+uv run --group text python eval_generator_utility.py \
+  --causal-features --limit 72 --device mps \
+  --generator Qwen/Qwen2.5-1.5B-Instruct --generator-dtype bfloat16 \
+  --output artifacts/results/longmemeval-generator-qwen-main-seed7.json
+```
+
+Every capacity-limited condition holds the same number of slots, so prompt length cannot explain a
+likelihood difference. `instrument_usable` is false unless the oracle prompts survive the context
+window intact, beat the no-memory reference, and beat a random selection of the same size. A
+generator that fails this gate says nothing about the writer: a 270M base model and a 135M
+instruction-tuned model both fail it, and an early 1,200-character session cap failed it by deleting
+the evidence from the oracle prompt itself.
+
+The second script scores selection rules that need no training at all. Candidate length is the
+control the earlier heuristic sweeps missed:
+
+```bash
+uv run python analyze_length_baseline.py --source claude \
+  --output artifacts/results/length-baseline-claude.json
+uv run python analyze_length_baseline.py --source longmemeval \
+  --output artifacts/results/length-baseline-longmemeval.json
+```
+
+The Claude run recomputes turn lengths from the local history and persists only aggregates.

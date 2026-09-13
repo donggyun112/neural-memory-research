@@ -853,6 +853,13 @@ causal features stabilize more than they improve retention. This is useful evide
 single-corpus artifact, but not proof of autonomous importance: oracle evidence IDs remain weak
 training teachers and the benchmark sessions are LLM-simulated and human-edited.
 
+**Correction, 2026-09-14.** The heuristic controls above omit candidate length. Phase 15 shows that
+keeping the two longest sessions retains the LongMemEval evidence in 0.4159 of the same held-out
+episodes, which is above this phase's learned 0.4069. The correct reference for the public
+validation is therefore 0.4159, not the 0.25 random-capacity expectation, and the LongMemEval
+retention claim does not survive it. The private Claude corpus is unaffected: its longest-two
+baseline is 0.3868 against a learned 0.6195.
+
 The literature-directed next branch is `FastWeightRecallMemory`. Following the parametric-state view
 of TTT and Titans, it predicts a candidate value from the current associative matrix, exposes the
 online prediction error as surprise, and delta-updates the matrix only for hard-selected candidates.
@@ -873,3 +880,99 @@ An input-dependent retention/forget gate was then trained through recall loss at
 retention was 0.6115, but top-1 and the shuffle gap fell to 0.5557 and 0.1951 versus 0.5732 and
 0.2213 for fixed learned decay. This adaptive-forgetting formulation is rejected at screening stage;
 the negative result suggests that 775 training episodes do not identify a richer retention policy.
+
+# Phase 15: frozen generator utility and the missing length control
+
+Date: 2026-09-14
+
+## Does the written memory change what a frozen generator predicts?
+
+Every earlier phase scored the memory layer against its own activation metrics. This phase asks a
+task-level question: does the layer's capacity decision change a frozen generator's mean negative
+log-likelihood of the human-written gold answer? The generator is never trained, never sees a label,
+and is used only as an instrument.
+
+The instrument is gated before it is trusted. `instrument_usable` is false unless the oracle prompts
+survive the context window intact, beat the no-memory reference, and beat a random selection of the
+same size. Every capacity-limited condition holds exactly two slots, including the oracle, so prompt
+length cannot explain a difference between them.
+
+Three configurations failed that gate and none of them says anything about the writer. Frozen
+`google/gemma-3-270m` is a base model and ranked random above oracle. `HuggingFaceTB/SmolLM2-135M-Instruct`
+recovered the oracle-over-random ordering but never beat the no-memory reference. Most importantly, an
+early 1,200-character session cap failed the gate by deleting the evidence from the oracle prompt
+itself: LongMemEval-S sessions average 10,870 characters and evidence sessions average 13,979, so the
+cap retained about a tenth of the text the oracle condition exists to supply. Conditions now report
+`truncated_prompt_rate`, and an intact oracle prompt is part of the gate.
+
+`Qwen/Qwen2.5-1.5B-Instruct` in bfloat16 passes. Results below use seed 7, the adopted causal-BCE
+writer at two-of-eight capacity, and the first 72 held-out LongMemEval-S episodes that carry a gold
+answer.
+
+| Condition | Answer NLL | Gain over no memory | Evidence present | Prompt truncated |
+| --- | ---: | ---: | ---: | ---: |
+| **Oracle two slots** | **2.3211** | **+0.5574** | 1.000 | 0.00 |
+| Length-matched control | 2.4632 | +0.4153 | 0.431 | 0.00 |
+| Random two slots | 2.5467 | +0.3318 | 0.236 | 0.00 |
+| Learned writer | 2.6099 | +0.2686 | 0.403 | 0.00 |
+| All eight traces | 2.6577 | +0.2208 | 1.000 | 1.00 |
+| Recency two slots | 2.7182 | +0.1603 | 0.194 | 0.00 |
+| No memory | 2.8785 | 0.0000 | 0.000 | 0.00 |
+
+Injecting all eight sessions is worse than any two-slot condition because it overflows the context
+window in every episode. Capacity-limited selection is therefore not only cheaper than supplying the
+whole history, it is more accurate, which is the premise the earlier phases assumed rather than
+measured.
+
+The aggregate learned row is not the informative number. Splitting the same 72 episodes by whether
+the writer actually kept the evidence session, and reading every condition on each subset, separates
+writer quality from episode difficulty:
+
+| Subset | Episodes | Learned | No memory | Oracle |
+| --- | ---: | ---: | ---: | ---: |
+| Writer kept the evidence | 29 | **2.1508** | 2.7587 | 2.2135 |
+| Writer discarded it | 43 | 2.9195 | 2.9593 | 2.3937 |
+
+When the write succeeds the learned layer delivers the whole oracle benefit: 2.1508 against an
+oracle 2.2135 and a no-memory 2.7587 on the identical episodes. When it fails, the injected memory is
+close to inert rather than harmful, moving 2.9593 to 2.9195. The discarded-evidence episodes are not
+intrinsically hard, because the oracle still reaches 2.3937 on them. The task-level shortfall is
+entirely write selection, which independently confirms the conditional top-1 of about 0.95 reported
+in Phase 13 and 14.
+
+## The training-free length control
+
+The heuristic sweeps in Phase 14 compared recency, causal novelty, and causal surprise, but never
+candidate length. Text that will be revisited is also longer than text that will not, in both
+corpora, so a learned writer must beat "keep the longest" before its retention counts.
+`analyze_length_baseline.py` recomputes candidate lengths from each source and persists only
+aggregates.
+
+| Corpus, held-out split | Longest two | Recency two | Shortest two | Random | Learned writer |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Claude revisit, 574 episodes | 0.3868 | 0.3885 | 0.1185 | 0.2500 | **0.6195** |
+| LongMemEval-S, 202 episodes | **0.4159** | 0.2277 | 0.0594 | 0.2500 | 0.4069 |
+
+Target candidates average 72.2 characters against 47.9 for non-targets on Claude, and 13,979 against
+10,426 on LongMemEval-S. The private natural corpus survives the control with a wide margin: 0.6195
+against 0.3868. The public validation does not. On LongMemEval-S the adopted model retains 0.4069
+while an untrained longest-two rule retains 0.4159, so Phase 14's comparison against a 0.25
+random-capacity expectation used the wrong reference and the external retention claim is withdrawn.
+The Phase 14 section carries a correction pointing here.
+
+## Interpretation boundary
+
+Two results stand. The first is positive and new: a task-level endpoint, gated so that it provably
+detects a known-good memory, shows that a correct capacity decision by this layer buys essentially
+the full oracle gain on a frozen generator it was never trained against. The second is negative and
+retracts an earlier claim: the layer's advantage over training-free rules exists on the private
+Claude corpus and does not exist on the public benchmark once length is controlled.
+
+Neither result establishes autonomous importance. The generator comparison uses one seed, 72
+episodes, and one 1.5-billion-parameter model, so its margins are illustrative rather than
+statistically settled. The length finding does not show that the writer is only a length detector on
+Claude; it shows that the public benchmark cannot distinguish the two hypotheses. The decisive next
+experiment is to supply candidate length as an explicit input feature and measure whether the learned
+layer still improves on the residual. If it does, the Claude margin is semantic; if it does not, much
+of the reported retention is a length correlate and the weak teacher needs redesigning before any
+further architecture work.

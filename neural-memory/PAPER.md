@@ -99,10 +99,21 @@ bottleneck to write selection.
 
 Adding causal position, novelty, and prediction-surprise signals raises five-seed retention to
 0.6279 +/- 0.0097 and top-1 to 0.5882 +/- 0.0085 on MPS; an independent CPU repeat reaches
-0.6195 +/- 0.0101 and 0.5878 +/- 0.0075, preserving the direction of both gains. On the adapted
-public LongMemEval-S test, the same
-staged layer retains 0.4030 +/- 0.0263 versus a 0.25 capacity expectation; position-macro retention is
-0.4058 +/- 0.0285 and every seed has a positive correct-query advantage. A 14,463-parameter
+0.6195 +/- 0.0101 and 0.5878 +/- 0.0075, preserving the direction of both gains.
+
+A training-free length control added in Phase 15 changes what the public validation supports. Keeping
+the two longest candidates retains the evidence in 0.3868 of held-out Claude episodes against the
+learned 0.6195, so the private result survives. On LongMemEval-S the same rule retains 0.4159 against
+a learned 0.4069, so the earlier external claim — 0.4030 +/- 0.0263 against a 0.25 random-capacity
+expectation — used the wrong reference and is withdrawn. The public benchmark currently cannot
+distinguish this layer from a length heuristic.
+
+A gated frozen-generator endpoint supplies the first task-level evidence. Scoring the gold answer
+with a frozen `Qwen/Qwen2.5-1.5B-Instruct`, and reading every condition on the same episodes, the
+layer reaches 2.1508 answer NLL against an oracle 2.2135 and a no-memory 2.7587 on the 29 of 72
+episodes where its write succeeded; on the 43 where it failed the injected memory is near-inert at
+2.9195 against 2.9593, while the oracle still reaches 2.3937. The entire task-level shortfall is
+write selection, not recall. A 14,463-parameter
 fast-weight alternative with a 144-scalar matrix state reaches 0.6066 +/- 0.0250 retention and 0.5575
 +/- 0.0211 top-1 on the natural Claude corpus, showing a parameter-efficient parametric-memory
 effect but not surpassing the adopted trace layer.
@@ -136,11 +147,18 @@ completed result.
 
 ## Next decisive experiments
 
-1. Finish five-seed listwise, causal-surprise, and joint-training ablations on natural logs.
-2. Repeat the adopted model and controls on LongMemEval-S with position-macro reporting.
-3. Add a parametric fast-weight state whose inner reconstruction gradient supplies genuine
-   test-time surprise, then compare it with the trace-state layer at equal persistent-state budget.
+Items 1 to 3 below are complete and reported in `RESULTS.md` Phase 14; item 5 has a gated
+first measurement in Phase 15. The remaining order is:
+
+1. Supply candidate length as an explicit input feature and measure whether the layer still improves
+   on the residual. This decides whether the Claude margin is semantic or a length correlate, and it
+   gates every further architecture change.
+2. If the margin is semantic, find a public corpus whose evidence is not length-correlated, because
+   LongMemEval-S cannot currently separate the two hypotheses.
+3. If it is not, redesign the weak write teacher, which presently defines utility through lexical
+   recurrence and is the likeliest source of the length correlation.
 4. Add explicit retention/forget gates and evaluate knowledge-update examples, where obsolete
-   evidence must lose activation to newer evidence.
-5. Measure whether injected memories improve a frozen generator while preserving the activation
-   metrics as the mechanistic primary endpoint.
+   evidence must lose activation to newer evidence. Phase 14 rejected an adaptive retention gate at
+   screening, so this needs more training episodes before it is worth retrying.
+5. Extend the generator endpoint to several seeds, the full evaluation split, and a second generator,
+   keeping the activation metrics as the mechanistic primary endpoint.
