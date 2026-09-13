@@ -421,3 +421,29 @@ uv run python train_gemma_lora_pilot.py \
 The LoRA pilot first trains the independent memory layer from the frozen feature artifact using
 train projects only, freezes that layer, and then updates only Gemma's adapters from raw text. The
 evaluation subset switch is for quick local screening; it must be removed for a full result.
+
+## Phase 12: explicit write capacity followed by delayed recall
+
+The write/recall experiment splits each natural issue into an early title or summary and its later
+body. A 377,730-parameter independent layer sees the early context plus candidate spans, writes only
+a fixed fraction as 128-dimensional traces, and later activates stored traces from the body. The
+write decision is a hard top-k action at inference, not an external graph operation.
+
+```text
+early issue + candidate ──write gate──► fixed-capacity 128d trace state
+                                                │
+later issue body ─────────recall head───────────► activate / ignore
+```
+
+```bash
+uv run python prepare_contextbench_split_features.py \
+  --device mps --batch-size 64 --max-length 256
+uv run python train_context_write_recall_cv.py \
+  --write-pretrain-steps 1000 --freeze-write --steps 1000 \
+  --memory-dim 128 --keep-ratio 0.75 --seed 7 --summary
+```
+
+Write-gate pretraining uses human-gold utility as a weak teacher, then freezes the gate before
+recall training. Neither a write label nor a recall instruction is present at inference. Use
+`--write-aux-weight` to test simultaneous teacher training, or omit pretraining to reproduce the
+failed pure end-to-end credit condition.

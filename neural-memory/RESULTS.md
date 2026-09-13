@@ -686,3 +686,53 @@ Training all candidates from one episode together also failed to improve balance
 0 (0.5234, top-1 0.5650). This branch is not adopted yet. A worthwhile next run would save adapters,
 evaluate all held-out episodes, and repeat every fold/seed; simply scaling adapter steps is not
 justified by the present evidence.
+
+# Phase 12: capacity-constrained write then recall
+
+Date: 2026-09-13
+
+This phase turns trace creation into a model action. Each ContextBench issue is split into an early
+write context (the first non-empty line, or the first half of a one-line issue) and a later recall
+context (the remaining body). Across the 3,177 episodes, the early context averages 20.1 words and
+the later context 151.3 words; none are identical. Frozen Gemma produces separate embeddings for
+the two contexts.
+
+`SelectiveWriteRecallMemory` has 377,730 trainable parameters. It scores each candidate using only
+the early context, executes hard top-k selection, and persists selected candidates as 128d model
+traces. A separate head later sees the trace state plus the later context. No key/value graph or
+external retrieval call is involved.
+
+Pure end-to-end delayed credit failed. With 50% capacity and only final activation loss, write
+selection balanced accuracy was 0.5054 and shuffling the write context changed almost nothing. A
+simultaneous weak-teacher auxiliary loss also remained poor: weight 0.1 produced 0.5097 write
+selection and weight 1 produced 0.5238. The usable curriculum was staged imitation: pretrain the
+write gate for 1,000 steps from human-gold utility, freeze it, then train the recall head for 1,000
+steps from final activation loss.
+
+At 50% capacity the staged model achieved 0.5880 write selection and 0.5844 final activation, but
+shuffling the later recall context did not hurt. The gate had enough information and exactly enough
+slots to solve most of the task at write time. Raising capacity to 75% deliberately retained some
+distractors and made later recall necessary.
+
+Five-fold grouped-project results below are mean and population standard deviation over seeds 7,
+17, 27, 37, and 47. Shuffle controls replace only one context with another issue from the same
+held-out repository.
+
+| 75% capacity condition | Balanced accuracy | Top-1 |
+| --- | ---: | ---: |
+| **Correct early write + later recall** | **0.5917 +/- 0.0064** | **0.5882 +/- 0.0041** |
+| Same-project shuffled write context | 0.5757 +/- 0.0056 | 0.5803 +/- 0.0075 |
+| Same-project shuffled recall context | 0.5809 +/- 0.0052 | 0.5642 +/- 0.0072 |
+| Hard write selection itself | 0.5871 +/- 0.0029 | 0.5592 +/- 0.0046 |
+
+Correct context beat shuffled write by 0.0160 +/- 0.0013 balanced-accuracy and shuffled recall by
+0.0108 +/- 0.0017. Both gaps were positive in every seed. This is the first natural-data condition
+in this project where the learned layer makes a capacity-limited write action and a separate later
+context materially changes recall. It nearly matches the full-issue aligned Gemma activation score
+(0.5946) despite separating the information across two hooks.
+
+The boundary matters: this does not show that the model discovers intrinsic importance without a
+teacher. It shows that the proposed roadmap works—weak-label write imitation followed by delayed
+recall learning—and that pure end-to-end credit is currently insufficient. The temporal split is
+also constructed from one issue rather than two independently occurring events. The next stronger
+test needs real multi-event conversations where an early observation is reused or corrected later.
