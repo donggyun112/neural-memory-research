@@ -139,13 +139,21 @@ def predict(
     event: Tensor,
     query: Tensor,
     masks: Tensor,
-) -> tuple[Tensor, Tensor, Tensor]:
+    keep: int,
+) -> tuple[Tensor, Tensor, Tensor, Tensor]:
     model.eval()
     state = model.write(candidates, masks)
     provisional = state.provisional
     consolidated = model.consolidate(state, event)
     logits = model.recall(consolidated, query)
-    return provisional, consolidated.selected, logits.argmax(dim=-1)
+    # What a trivial consolidation rule would keep from the same provisional
+    # set: this separates a weak second stage from a weak first one.
+    similarity = torch.einsum("etf,ef->et", candidates, event)
+    ceiling = torch.zeros_like(provisional)
+    ceiling.scatter_(
+        1, similarity.masked_fill(~provisional, -torch.inf).topk(keep, dim=1).indices, True
+    )
+    return provisional, consolidated.selected, logits.argmax(dim=-1), ceiling
 
 
 def main() -> None:
@@ -211,6 +219,12 @@ def main() -> None:
     query_visible = float(
         (cosine.topk(keep, dim=1).indices == targets[:, None]).any(dim=1).float().mean()
     )
+    # The consolidation event is nearly as query-like as the query itself, so
+    # this is the reference the deferred variants must be read against.
+    event_cosine = torch.einsum("etf,ef->et", candidates, consolidation)
+    event_visible = float(
+        (event_cosine.topk(keep, dim=1).indices == targets[:, None]).any(dim=1).float().mean()
+    )
 
     type_names = payload["question_type_names"]
     per_type_longest: dict[str, float] = {}
@@ -238,6 +252,7 @@ def main() -> None:
             survived_write = torch.zeros(episodes, dtype=torch.bool)
             correct = torch.zeros(episodes, dtype=torch.bool)
             chosen = torch.zeros(episodes, traces, dtype=torch.bool)
+            cosine_kept = torch.zeros(episodes, dtype=torch.bool)
             for fold in range(args.folds):
                 evaluate = assignment == fold
                 train = ~evaluate
@@ -257,18 +272,20 @@ def main() -> None:
                     seed=seed,
                     device=device,
                 )
-                provisional, selected, predicted = predict(
+                provisional, selected, predicted, ceiling = predict(
                     model,
                     candidates[evaluate].to(device),
                     event[evaluate].to(device),
                     query[evaluate].to(device),
                     masks[: int(evaluate.sum())],
+                    keep,
                 )
                 gold = targets[evaluate].to(device)
                 survived_write[evaluate] = provisional.gather(1, gold[:, None]).squeeze(1).cpu()
                 kept[evaluate] = selected.gather(1, gold[:, None]).squeeze(1).cpu()
                 correct[evaluate] = (predicted == gold).cpu()
                 chosen[evaluate] = selected.cpu()
+                cosine_kept[evaluate] = ceiling.gather(1, gold[:, None]).squeeze(1).cpu()
             # Equal retention does not mean the same rule: this measures whether
             # the learned writer picks the same slots a length rule would.
             intersection = (chosen & longest_selection).sum(dim=1).float()
@@ -279,6 +296,7 @@ def main() -> None:
                 "top1": float(correct.float().mean()),
                 "margin_over_longest_k": float(kept.float().mean()) - longest,
                 "selection_iou_with_longest_k": float((intersection / union).mean()),
+                "cosine_consolidation_ceiling": float(cosine_kept.float().mean()),
             }
             # knowledge-update questions invert the objective: their later
             # evidence supersedes the earlier session, so retaining the write
@@ -307,6 +325,7 @@ def main() -> None:
             "longest_k_retention": longest,
             "longest_k_retention_by_type": per_type_longest,
             "query_visible_cosine_retention": query_visible,
+            "event_visible_cosine_retention": event_visible,
             "episodes_by_type": {
                 label: int((payload["question_type"] == index).sum())
                 for index, label in enumerate(type_names)
