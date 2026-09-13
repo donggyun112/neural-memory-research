@@ -543,3 +543,21 @@ uv run python analyze_length_baseline.py --source longmemeval \
 ```
 
 The Claude run recomputes turn lengths from the local history and persists only aggregates.
+
+## Phase 16: separating the semantic margin from the length correlate
+
+`train_length_residual.py` holds the model, weak teacher, split, and training budget fixed while
+changing only what the write gate can see. The length arm receives standardized log length and
+within-episode length rank, which is exactly what a "keep the longest" rule reads.
+
+```bash
+uv run python train_length_residual.py --source claude \
+  --seeds 7,17,27,37,47 --output artifacts/results/length-residual-claude.json
+
+uv run python train_length_residual.py --source longmemeval \
+  --features artifacts/longmemeval_bge.pt \
+  --seeds 7,17,27,37,47 --output artifacts/results/length-residual-longmemeval.json
+```
+
+Candidate lengths are recomputed from the source and checked against the feature artifact's targets
+before training, so a silent misalignment cannot produce the comparison.

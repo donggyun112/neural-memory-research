@@ -108,6 +108,14 @@ a learned 0.4069, so the earlier external claim — 0.4030 +/- 0.0263 against a 
 expectation — used the wrong reference and is withdrawn. The public benchmark currently cannot
 distinguish this layer from a length heuristic.
 
+Phase 16 resolves what that implies. Giving the same layer length-only write inputs reaches
+0.4056 +/- 0.0128 retention on Claude against 0.5920 +/- 0.0099 for the frozen embedding, and making
+length explicit alongside the embedding does not improve it. The private margin is therefore content,
+not length. On LongMemEval-S the length arm instead converges to the longest-two rule with zero seed
+variance and beats the embedding arm, so the failure is specific to that benchmark's write step; even
+there, length-only traces recall at 0.2277 top-1 against the embedding arm's 0.3198, because a later
+query has nothing to match in a length-only trace.
+
 A gated frozen-generator endpoint supplies the first task-level evidence. Scoring the gold answer
 with a frozen `Qwen/Qwen2.5-1.5B-Instruct`, and reading every condition on the same episodes, the
 layer reaches 2.1508 answer NLL against an oracle 2.2135 and a no-memory 2.7587 on the 29 of 72
@@ -147,18 +155,17 @@ completed result.
 
 ## Next decisive experiments
 
-Items 1 to 3 below are complete and reported in `RESULTS.md` Phase 14; item 5 has a gated
-first measurement in Phase 15. The remaining order is:
+The original items 1 to 3 are complete and reported in `RESULTS.md` Phase 14, item 5 has a gated
+first measurement in Phase 15, and the length-residual question raised in Phase 15 is answered in
+Phase 16. The remaining order is:
 
-1. Supply candidate length as an explicit input feature and measure whether the layer still improves
-   on the residual. This decides whether the Claude margin is semantic or a length correlate, and it
-   gates every further architecture change.
-2. If the margin is semantic, find a public corpus whose evidence is not length-correlated, because
-   LongMemEval-S cannot currently separate the two hypotheses.
-3. If it is not, redesign the weak write teacher, which presently defines utility through lexical
-   recurrence and is the likeliest source of the length correlation.
-4. Add explicit retention/forget gates and evaluate knowledge-update examples, where obsolete
+1. Find a public corpus whose evidence is not length-correlated. Phase 16 shows the Claude margin is
+   semantic and that LongMemEval-S cannot corroborate it, so external validation now depends on the
+   benchmark rather than on the layer.
+2. Test the remaining teacher correlates the way length was tested: turn position, vocabulary rarity,
+   and question form each need an explicit-feature arm before the weak teacher can be called clean.
+3. Add explicit retention/forget gates and evaluate knowledge-update examples, where obsolete
    evidence must lose activation to newer evidence. Phase 14 rejected an adaptive retention gate at
    screening, so this needs more training episodes before it is worth retrying.
-5. Extend the generator endpoint to several seeds, the full evaluation split, and a second generator,
+4. Extend the generator endpoint to several seeds, the full evaluation split, and a second generator,
    keeping the activation metrics as the mechanistic primary endpoint.

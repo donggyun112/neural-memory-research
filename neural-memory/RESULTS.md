@@ -976,3 +976,58 @@ experiment is to supply candidate length as an explicit input feature and measur
 layer still improves on the residual. If it does, the Claude margin is semantic; if it does not, much
 of the reported retention is a length correlate and the weak teacher needs redesigning before any
 further architecture work.
+
+# Phase 16: is the margin semantic or a length correlate?
+
+Date: 2026-09-14
+
+Phase 15 left one question that gates every further design decision. `train_length_residual.py`
+answers it by giving the same layer three different write inputs while holding the model, the weak
+teacher, the split, and the training budget fixed. Candidate lengths are recomputed from each source
+and checked against the feature artifact's targets before training, so an unnoticed misalignment
+cannot produce the result.
+
+The length arm receives two channels: standardized log length and within-episode length rank. The
+rank channel is exactly what a "keep the longest" rule reads. Five seeds, two-of-eight capacity,
+1,000 write and 1,000 recall steps on CPU.
+
+| Write input | Claude retention | Claude top-1 | LongMemEval retention | LongMemEval top-1 |
+| --- | ---: | ---: | ---: | ---: |
+| Length only | 0.4056 +/- 0.0128 | 0.2209 +/- 0.0126 | **0.4158 +/- 0.0000** | 0.2277 +/- 0.0000 |
+| **Frozen embedding** | **0.5920 +/- 0.0099** | **0.5686 +/- 0.0184** | 0.4030 +/- 0.0236 | **0.3198 +/- 0.0227** |
+| Embedding plus length | 0.5812 +/- 0.0104 | 0.5578 +/- 0.0098 | 0.3980 +/- 0.0240 | 0.3218 +/- 0.0266 |
+
+Reference points are the training-free longest-two rule, 0.3868 on Claude and 0.4158 on
+LongMemEval-S, and the 0.25 random-capacity expectation. The embedding arm reproduces the Phase 14
+staged-BCE CPU retention of 0.5920 exactly, which confirms the harness did not change the adopted
+configuration.
+
+## What this settles
+
+On the natural Claude corpus the margin is semantic. The embedding arm beats the length arm by
+0.1864 retention and 0.3477 top-1, and making length explicit does not improve it: the combined arm
+is 0.0108 retention lower, inside seed noise but with no sign of a gain. A length cue the layer could
+not already read would have raised the combined arm, so the frozen embedding evidently carries
+whatever length information is useful and the remaining advantage is content.
+
+On LongMemEval-S it is not. The length arm converges to the longest-two rule with zero seed variance
+and beats the embedding arm on retention. Adding the embedding does not recover the gap. The public
+benchmark therefore cannot separate this layer from a trivial rule at the write step, which is
+consistent with the Phase 15 withdrawal rather than a new failure.
+
+One nuance keeps the public result from being wholly negative. Even where length retains more
+evidence, it recalls far less: 0.2277 top-1 against the embedding arm's 0.3198. Length-only traces
+carry nothing a later query can match, so the recall mechanism still requires semantics. What
+LongMemEval-S fails to validate is write selection specifically, not the memory layer as a whole.
+
+## Interpretation boundary
+
+This does not show that the Claude writer is free of shortcuts, only that length is not the shortcut.
+The weak teacher still defines utility through lexical recurrence, and other correlates — turn
+position, vocabulary rarity, question form — remain untested in the same way length was until
+yesterday. The result also does not transfer: it establishes the phenomenon on one private corpus
+whose public counterpart cannot currently corroborate it.
+
+The next investment is therefore a public corpus whose evidence is not length-correlated, rather than
+a teacher redesign, since the teacher has now survived the specific confound that motivated
+questioning it.
