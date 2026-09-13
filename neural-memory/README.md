@@ -322,3 +322,30 @@ Adding Codex makes the outcome relation more reproducible, but does not make the
 labels causal ground truth. Both coupled and decoupled models improve when the real outcome is
 available and regress when outcomes are shuffled; neither achieves reliable whole-episode action
 assignment. See `RESULTS.md` for the leave-one-project-out measurements.
+
+### Public trajectory bootstrap
+
+`download_open_swe.py` samples resolved SWE-agent trajectories from NVIDIA's public
+`Open-SWE-Traces` release through the Hugging Face dataset server. The downloader rejects truncated
+rows and keeps only the explicitly listed permissive repository licenses. Raw trajectories and the
+reproducibility manifest stay under ignored `local-data/`.
+
+The adapter does not treat final success as an action label. It extracts the narrower relationship
+already used by the local control: an explicit failing test, intervening editor mutations, and a
+later passing test within an ultimately resolved trajectory. This gives more projects and model
+behaviors without pretending that every action in a successful rollout was causal.
+
+```bash
+uv run python download_open_swe.py --rows 1000
+uv run python analyze_open_swe.py
+uv run python prepare_repair_features.py --skip-local \
+  --open-swe-root local-data/open-swe-v1.jsonl \
+  --output artifacts/open-swe-repair.pt
+uv run python train_repair_credit_cv.py \
+  --features artifacts/open-swe-repair.pt --architecture decoupled \
+  --folds 5 --steps 600 --seed 7 --summary
+```
+
+Source: [NVIDIA Open-SWE-Traces](https://huggingface.co/datasets/nvidia/Open-SWE-Traces).
+The dataset card states that source repositories use MIT, Apache-2.0, BSD-2-Clause, or
+BSD-3-Clause licenses and includes the SPDX license on each row.

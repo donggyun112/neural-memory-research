@@ -533,3 +533,41 @@ It is still below a deployment gate. Coupled joint accuracy averaged about 0.409
 the majority class, and exact whole-episode accuracy remained below 1%. Temporal repair labels
 remain ambiguous about which mutation caused a pass. The combined result supports the existence of
 the delayed relational phenomenon, not autonomous memory deletion or trustworthy causal credit.
+
+# Phase 10: public Open-SWE trajectory scaling
+
+Date: 2026-09-13
+
+NVIDIA Open-SWE-Traces provides more than 200,000 public software-agent trajectories, including
+67,153 trajectories in the selected v1.0 SWE-agent split. A deterministic downloader sampled 5,000
+rows that were resolved by the hidden task tests, had no Dataset Viewer truncation, and declared one
+of MIT, Apache-2.0, BSD-2-Clause, or BSD-3-Clause. The ignored local JSONL is 1.2 GB; its manifest
+records the selection seed, per-license counts, and SHA-256 digest.
+
+The public adapter deliberately uses a stricter teacher than final success alone. It emits an
+episode only when a trajectory contains an explicit failing verification, one or more intervening
+editor mutations, a later passing verification from the same test family, and final hidden-test
+resolution. This produced 611 episodes from 471 trajectories and 254 repositories, with 3,784
+labels: 645 ignore, 997 strengthen, and 2,142 revise. All 611 episodes contain multiple actions.
+
+For a fair comparison across the much larger repository vocabulary, every condition below uses the
+same balanced five-fold grouped-project split. Values are mean and population standard deviation
+over seeds 7, 17, 27, 37, and 47 with the decoupled 64-dimensional model and 600 steps per fold.
+
+| Corpus | Episodes / labels / projects | Candidate-only balanced accuracy | Candidate + outcome | Shuffled outcome |
+| --- | ---: | ---: | ---: | ---: |
+| Local Claude + Codex | 370 / 2,871 / 18 | 0.3621 +/- 0.0044 | **0.3692 +/- 0.0125** | 0.3523 +/- 0.0053 |
+| Public Open-SWE | 611 / 3,784 / 254 | 0.3647 +/- 0.0035 | **0.3672 +/- 0.0043** | 0.3596 +/- 0.0050 |
+| Combined | 981 / 6,655 / 272 | 0.3613 +/- 0.0060 | **0.3693 +/- 0.0087** | 0.3624 +/- 0.0097 |
+
+Public-only joint evidence beat shuffled outcomes by 0.0077 balanced-accuracy points on average and
+did so in four of five seeds. The combined model also beat its shuffle control in four of five
+seeds. However, public data did not raise absolute joint balanced accuracy: local-only, public-only,
+and combined all remained near 0.37. Adding 611 stricter public episodes increased sample size and
+repository diversity without breaking the ceiling.
+
+This rejects the simplest quantity-only explanation. Public test logs repeat generic failure/pass
+language, several mutations still share one outcome, and frozen character hashes preserve lexical
+form better than code-level causal semantics. The next public-data investment should target
+candidate-level utility annotations or use a stronger frozen code/text representation; merely
+adding more final-success trajectories is unlikely to resolve action credit.

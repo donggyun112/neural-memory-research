@@ -12,7 +12,7 @@ from train_repair_credit import measure, train_decoupled_variant, train_variant
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Leave-one-project-out repair credit evaluation")
+    parser = argparse.ArgumentParser(description="Grouped-project repair credit evaluation")
     parser.add_argument("--features", type=Path, default=Path("artifacts/repair_chains.pt"))
     parser.add_argument("--steps", type=int, default=600)
     parser.add_argument("--batch-size", type=int, default=32)
@@ -21,6 +21,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--device", default="cpu", choices=("cpu", "mps"))
     parser.add_argument("--architecture", default="coupled", choices=("coupled", "decoupled"))
+    parser.add_argument(
+        "--folds",
+        type=int,
+        default=0,
+        help="number of project-group folds; 0 keeps leave-one-project-out",
+    )
     parser.add_argument("--summary", action="store_true")
     return parser.parse_args()
 
@@ -53,8 +59,26 @@ def main() -> None:
     heldout_masks: list[torch.Tensor] = []
 
     projects = project_ids.unique(sorted=True)
-    for fold, project_id in enumerate(projects):
-        eval_mask = project_ids == project_id
+    if args.folds < 0 or args.folds == 1 or args.folds > len(projects):
+        raise ValueError("folds must be 0 or between 2 and the number of projects")
+    if args.folds == 0:
+        fold_projects = [[int(project_id)] for project_id in projects]
+    else:
+        fold_projects = [[] for _ in range(args.folds)]
+        fold_sizes = [0] * args.folds
+        project_sizes = [
+            (int(project_id), int((project_ids == project_id).sum()))
+            for project_id in projects
+        ]
+        for project_id, size in sorted(project_sizes, key=lambda item: (-item[1], item[0])):
+            target_fold = min(range(args.folds), key=lambda index: fold_sizes[index])
+            fold_projects[target_fold].append(project_id)
+            fold_sizes[target_fold] += size
+
+    for fold, heldout_projects in enumerate(fold_projects):
+        eval_mask = torch.zeros_like(project_ids, dtype=torch.bool)
+        for project_id in heldout_projects:
+            eval_mask |= project_ids == project_id
         train_mask = ~eval_mask
         banks = RepairBanks(
             train_candidates=candidates[train_mask],
@@ -118,6 +142,7 @@ def main() -> None:
     output = {
         "config": vars(args),
         "projects": len(projects),
+        "folds": len(fold_projects),
         "episodes": len(combined_targets),
         "labels": int(combined_masks.sum()),
         "metrics": {name: asdict(value) for name, value in results.items()},

@@ -10,6 +10,7 @@ import torch
 from neural_memory.claude_logs import stable_eval_split
 from neural_memory.codex_repair_chains import iter_codex_repair_episodes
 from neural_memory.outcome_labels import hashed_text_features
+from neural_memory.open_swe import iter_open_swe_repair_episodes
 from neural_memory.repair_chains import iter_repair_episodes
 
 
@@ -26,25 +27,37 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--feature-dim", type=int, default=512)
     parser.add_argument("--max-per-action", type=int, default=4)
     parser.add_argument("--distractors", type=int, default=2)
+    parser.add_argument("--open-swe-root", type=Path)
+    parser.add_argument("--skip-local", action="store_true")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    episodes = list(
-        iter_repair_episodes(
-            args.root,
-            max_per_action=args.max_per_action,
-            distractors=args.distractors,
+    episodes = []
+    if not args.skip_local:
+        episodes.extend(
+            iter_repair_episodes(
+                args.root,
+                max_per_action=args.max_per_action,
+                distractors=args.distractors,
+            )
         )
-    )
-    episodes.extend(
-        iter_codex_repair_episodes(
-            args.codex_root,
-            max_per_action=args.max_per_action,
-            distractors=args.distractors,
+        episodes.extend(
+            iter_codex_repair_episodes(
+                args.codex_root,
+                max_per_action=args.max_per_action,
+                distractors=args.distractors,
+            )
         )
-    )
+    if args.open_swe_root is not None:
+        episodes.extend(
+            iter_open_swe_repair_episodes(
+                args.open_swe_root,
+                max_per_action=args.max_per_action,
+                distractors=args.distractors,
+            )
+        )
     if not episodes:
         raise RuntimeError("no repair episodes found")
     max_candidates = max(len(episode.candidates) for episode in episodes)
