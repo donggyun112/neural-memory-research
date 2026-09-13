@@ -13,6 +13,7 @@ class LongMemEvalRevisit:
     question_type: str
     candidates: tuple[str, ...]
     question: str
+    answer: str
     target_offset: int
     delay: int
     split: str
@@ -77,6 +78,7 @@ def iter_longmemeval_revisits(
                 question_type=str(row["question_type"]),
                 candidates=tuple(_session_text(by_id[value]) for value in chosen),
                 question=str(row["question"]),
+                answer=str(row.get("answer", "")),
                 target_offset=chosen.index(answer_id),
                 delay=len(session_ids) - session_ids.index(answer_id),
                 split=split,
