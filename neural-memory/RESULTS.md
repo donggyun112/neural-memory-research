@@ -1031,3 +1031,120 @@ whose public counterpart cannot currently corroborate it.
 The next investment is therefore a public corpus whose evidence is not length-correlated, rather than
 a teacher redesign, since the teacher has now survived the specific confound that motivated
 questioning it.
+
+# Phase 17: deferring the write decision
+
+Date: 2026-09-14
+
+Phase 7 measured the ceiling of predicting future utility at write time: 0.543 balanced accuracy
+from observation-time evidence against 0.980 once delayed feedback arrives. Phases 12 to 16 kept the
+write-time framing anyway. The literature survey in `RESEARCH.md` found three biological mechanisms
+converging on cheap local write plus later revision, and prior art that makes two-stage deferral the
+only remaining differentiator of this project. This phase tests it on real data.
+
+## The corpus was already on disk
+
+63.8% of non-abstention LongMemEval-S questions carry evidence in two or more sessions, a median of
+20 sessions apart, but `iter_longmemeval_revisits` emits one single-evidence episode per evidence
+session and discards that structure. `iter_longmemeval_deferred` keeps it: the earliest evidence
+session becomes the write target, the next becomes an event that arrives before the query, and every
+evidence session is excluded from the distractor pool so the later event is never reachable as a
+candidate. This yields 300 episodes, one per question — 121 multi-session, 107 temporal-reasoning,
+and 72 knowledge-update. Evaluation is five-fold grouped cross-validation stratified by question
+type, so every episode is predicted out of fold.
+
+`DeferredConsolidationMemory` stages the decision. Stage one sees only the candidates and commits to
+a provisional set; stage two receives the later event and may narrow it but cannot recover anything
+stage one dropped. Setting the provisional ratio equal to the final one makes stage two a no-op, so
+the single-stage baseline is the same class with the same parameter count.
+
+## What the corpus supports before any training
+
+| Training-free rule | All | knowledge-update | multi-session | temporal-reasoning |
+| --- | ---: | ---: | ---: | ---: |
+| Random capacity | 0.2500 | 0.2500 | 0.2500 | 0.2500 |
+| Recency, last two | 0.2433 | 0.3056 | 0.1818 | 0.2710 |
+| Longest two | 0.4767 | 0.3472 | 0.4380 | 0.6075 |
+| Cosine to the later event | 0.9400 | 0.9583 | 0.9752 | 0.8879 |
+| Cosine to the query | 0.9367 | 0.9583 | 0.9421 | 0.9159 |
+
+Two readings matter. Recency sits below random because candidate order is hash-randomised, which
+confirms position carries no cue. And the later event is not weak evidence: ranking by raw cosine to
+it retains the target slightly more often than the query itself does. The deferred variants must be
+read against that 0.94 ceiling, not against random capacity.
+
+The corpus also has no measurable deferral window. Bucketing by the distance between the write
+target and the later event, cosine-to-event retention runs 0.9296, 0.9241, 0.9324, and 0.9737 from
+the closest band to the furthest. The finite window the biological survey describes is not
+observable here, so this phase can ask whether deferring helps but not how long a decision may be
+deferred.
+
+## Deferral helps, and the help is event-specific
+
+Five seeds, two-of-eight final capacity, four-of-eight provisional capacity for the deferred arms.
+
+| Variant | Retention | Margin over longest-two | Top-1 |
+| --- | ---: | ---: | ---: |
+| **Deferred, event similarity exposed** | **0.6220 +/- 0.0225** | **+0.1453** | **0.3453** |
+| Deferred | 0.5373 +/- 0.0168 | +0.0607 | 0.3273 |
+| Deferred, blank event | 0.5087 +/- 0.0072 | +0.0320 | 0.3120 |
+| Single stage | 0.4947 +/- 0.0086 | +0.0180 | 0.3147 |
+| Deferred, shuffled event | 0.4920 +/- 0.0078 | +0.0153 | 0.3273 |
+| Deferred similarity, shuffled event | 0.4887 +/- 0.0129 | +0.0120 | 0.3113 |
+
+Deferring beats the single-stage writer by 0.0426, and the gain is specific to the event rather than
+to the extra selection step: a blank event recovers only part of it and a real event belonging to
+another question recovers none, landing below the single-stage baseline. The same ordering holds on
+the 228-episode subset that excludes knowledge-update, where deferral reaches 0.5526 +/- 0.0133
+against 0.5281 +/- 0.0106 single-stage and 0.5167 +/- 0.0064 shuffled.
+
+## The second stage was the bottleneck, and why
+
+The write stage retains the target in 0.7860 of episodes at four-of-eight capacity, and ranking that
+same provisional set by raw cosine to the event would retain 0.7573. The learned consolidation head
+reached only 0.5373, so roughly a third of the available signal was being used.
+
+The likely cause is structural rather than a capacity limit. Stage one trains
+`candidate_projection` for write-worthiness and then freezes it, so a trace need not retain whatever
+would let stage two match it against a later event. Handing the consolidation head the untouched
+frozen-encoder similarity as one extra scalar input tests that directly, and it recovers 0.0847
+retention. The control settles the interpretation: with a shuffled event the same enriched head
+gains nothing and scores lowest of all six variants, so the improvement comes from the correct
+event's similarity rather than from the extra input width.
+
+Per-type margins over the longest-two baseline show why this matters beyond the pooled average:
+
+| Variant | knowledge-update | multi-session | temporal-reasoning |
+| --- | ---: | ---: | ---: |
+| Single stage | +0.0583 | +0.0347 | -0.0280 |
+| Deferred | +0.0917 | +0.0810 | +0.0168 |
+| **Deferred, event similarity exposed** | **+0.1722** | **+0.1950** | **+0.0710** |
+
+The single-stage writer loses to a training-free length rule on temporal-reasoning, the type with
+the strongest length bias. Only deferral combined with the exposed similarity clears the baseline on
+all three types.
+
+## knowledge-update is constructed wrong for this test
+
+Trained on its own 72 episodes, every variant lands at about 0.333, below that subset's own
+longest-two baseline of 0.3472, and the deferred and shuffled arms agree to four decimal places.
+That is the expected outcome rather than a failure: for these questions the later evidence supersedes
+the write target, and the adapter deliberately excludes it from the candidate pool, so the session
+the query actually needs can never be stored. Retaining the write target is not the right objective
+there. The subset does improve when trained alongside the 228 well-posed episodes, which is transfer
+rather than evidence about supersession. Measuring supersession needs an episode construction where
+the later evidence is itself written, not merely consulted.
+
+## Interpretation boundary
+
+This is positive evidence for two-stage deferral on real multi-evidence data, with the gain
+attributable to the later event by two independent controls. It is not evidence that weak delayed
+signals suffice: the event here is as informative as the query, so the result shows that a bounded
+memory can exploit clear later evidence, not that it can perform hard temporal credit assignment.
+The absolute numbers also remain far below what the same event supports — 0.6220 against a 0.9400
+cosine reference — so most of the available signal is still unused even after the fix.
+
+The corpus limits what can follow. Without a measurable deferral window there is no curve of
+retention against delay, and knowledge-update cannot test forgetting as constructed. The next data
+requirement is therefore a corpus whose later evidence degrades with distance, which is a stronger
+condition than the length-neutrality Phase 16 asked for.
