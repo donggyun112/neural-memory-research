@@ -156,6 +156,15 @@ def main() -> None:
         "--features", type=Path, default=Path("artifacts/longmemeval_deferred.pt")
     )
     parser.add_argument("--variants", default=",".join(VARIANTS))
+    parser.add_argument(
+        "--types",
+        default="multi-session,temporal-reasoning",
+        help=(
+            "question types to train and evaluate on; knowledge-update is excluded by "
+            "default because its later evidence supersedes the write target and is "
+            "never a candidate, so retaining that target is not the right behaviour"
+        ),
+    )
     parser.add_argument("--seeds", default="7,17,27,37,47")
     parser.add_argument("--folds", type=int, default=5)
     parser.add_argument("--keep-ratio", type=float, default=0.25)
@@ -170,6 +179,20 @@ def main() -> None:
     args = parser.parse_args()
 
     payload = torch.load(args.features, map_location="cpu", weights_only=True)
+    all_names = payload["question_type_names"]
+    wanted = [name.strip() for name in args.types.split(",") if name.strip()]
+    unknown = [name for name in wanted if name not in all_names]
+    if unknown:
+        raise ValueError(f"unknown question types {unknown}; available: {all_names}")
+    keep_rows = torch.zeros(len(payload["targets"]), dtype=torch.bool)
+    for name in wanted:
+        keep_rows |= payload["question_type"] == all_names.index(name)
+    if not bool(keep_rows.any()):
+        raise ValueError("the requested question types select no episodes")
+    payload = {
+        key: (value[keep_rows] if torch.is_tensor(value) and len(value) == len(keep_rows) else value)
+        for key, value in payload.items()
+    }
     candidates = payload["candidates"]
     consolidation = payload["consolidation"]
     query = payload["query"]
@@ -179,6 +202,8 @@ def main() -> None:
     episodes, traces, _ = candidates.shape
     keep = max(1, round(traces * args.keep_ratio))
 
+    longest_selection = torch.zeros(episodes, traces, dtype=torch.bool)
+    longest_selection.scatter_(1, lengths.topk(keep, dim=1).indices, True)
     longest = float(
         (lengths.topk(keep, dim=1).indices == targets[:, None]).any(dim=1).float().mean()
     )
@@ -187,6 +212,18 @@ def main() -> None:
         (cosine.topk(keep, dim=1).indices == targets[:, None]).any(dim=1).float().mean()
     )
 
+    type_names = payload["question_type_names"]
+    per_type_longest: dict[str, float] = {}
+    for index, label in enumerate(type_names):
+        subset = payload["question_type"] == index
+        if not bool(subset.any()):
+            continue
+        per_type_longest[label] = float(
+            (lengths[subset].topk(keep, dim=1).indices == targets[subset][:, None])
+            .any(dim=1)
+            .float()
+            .mean()
+        )
     assignment = stratified_folds(payload["question_type"], args.folds)
     masks = torch.ones(episodes, traces, dtype=torch.bool, device=device)
     seeds = [int(value) for value in args.seeds.split(",")]
@@ -200,6 +237,7 @@ def main() -> None:
             kept = torch.zeros(episodes, dtype=torch.bool)
             survived_write = torch.zeros(episodes, dtype=torch.bool)
             correct = torch.zeros(episodes, dtype=torch.bool)
+            chosen = torch.zeros(episodes, traces, dtype=torch.bool)
             for fold in range(args.folds):
                 evaluate = assignment == fold
                 train = ~evaluate
@@ -230,14 +268,27 @@ def main() -> None:
                 survived_write[evaluate] = provisional.gather(1, gold[:, None]).squeeze(1).cpu()
                 kept[evaluate] = selected.gather(1, gold[:, None]).squeeze(1).cpu()
                 correct[evaluate] = (predicted == gold).cpu()
-            rows.append(
-                {
-                    "retained_target_rate": float(kept.float().mean()),
-                    "provisional_retained": float(survived_write.float().mean()),
-                    "top1": float(correct.float().mean()),
-                    "margin_over_longest_k": float(kept.float().mean()) - longest,
-                }
-            )
+                chosen[evaluate] = selected.cpu()
+            # Equal retention does not mean the same rule: this measures whether
+            # the learned writer picks the same slots a length rule would.
+            intersection = (chosen & longest_selection).sum(dim=1).float()
+            union = (chosen | longest_selection).sum(dim=1).float().clamp_min(1.0)
+            row = {
+                "retained_target_rate": float(kept.float().mean()),
+                "provisional_retained": float(survived_write.float().mean()),
+                "top1": float(correct.float().mean()),
+                "margin_over_longest_k": float(kept.float().mean()) - longest,
+                "selection_iou_with_longest_k": float((intersection / union).mean()),
+            }
+            # knowledge-update questions invert the objective: their later
+            # evidence supersedes the earlier session, so retaining the write
+            # target is not obviously the right behaviour there.
+            for index, label in enumerate(type_names):
+                subset = payload["question_type"] == index
+                if bool(subset.any()):
+                    row[f"retained_{label}"] = float(kept[subset].float().mean())
+                    row[f"top1_{label}"] = float(correct[subset].float().mean())
+            rows.append(row)
         results[name] = {
             metric: {
                 "mean": mean(row[metric] for row in rows),
@@ -254,7 +305,13 @@ def main() -> None:
         "references": {
             "random_capacity": keep / traces,
             "longest_k_retention": longest,
+            "longest_k_retention_by_type": per_type_longest,
             "query_visible_cosine_retention": query_visible,
+            "episodes_by_type": {
+                label: int((payload["question_type"] == index).sum())
+                for index, label in enumerate(type_names)
+                if bool((payload["question_type"] == index).any())
+            },
         },
         "variants": results,
     }
