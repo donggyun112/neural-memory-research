@@ -571,3 +571,118 @@ language, several mutations still share one outcome, and frozen character hashes
 form better than code-level causal semantics. The next public-data investment should target
 candidate-level utility annotations or use a stronger frozen code/text representation; merely
 adding more final-success trajectories is unlikely to resolve action credit.
+
+# Phase 11: ContextBench human-gold activation
+
+Date: 2026-09-13
+
+ContextBench contains 1,136 issue-resolution tasks and human-verified gold code spans. Each task's
+natural problem statement became the activation context; its gold spans became positive candidate
+traces. Gold spans belonging to other tasks in the same repository became hard negatives. Splitting
+by repository prevents the model from memorizing repository identity, and shuffling queries only
+within each held-out repository provides a conservative relation control.
+
+Tasks without another annotated task in their repository cannot supply same-project negatives and
+were excluded. The resulting artifact contains 3,177 multi-trace episodes, 22,051 candidate labels,
+11,029 positives, and 57 repository groups. The learned layer stores each candidate as a
+64-dimensional trace. The BGE version has 65,923 trainable memory-layer parameters; the frozen BGE
+encoder receives no gradient.
+
+Five-fold grouped-project evaluation used seeds 7, 17, 27, 37, and 47 and 600 steps per fold.
+
+| Frozen representation / evidence | Balanced accuracy | Top-1 gold activation |
+| --- | ---: | ---: |
+| Character hash, candidate + query | 0.5113 +/- 0.0039 | 0.4697 +/- 0.0085 |
+| Character hash, same-project shuffled query | 0.5064 +/- 0.0034 | 0.4609 +/- 0.0079 |
+| BGE, candidate only | 0.4975 +/- 0.0014 | 0.4311 |
+| BGE, query only | approximately 0.5000 | 0.5024 |
+| **BGE, candidate + natural query** | **0.6046 +/- 0.0024** | **0.6624 +/- 0.0081** |
+| BGE, same-project shuffled query | 0.5658 +/- 0.0021 | 0.5746 +/- 0.0084 |
+
+The BGE joint model beats the same-repository shuffled-query control by 3.88 balanced-accuracy
+points and 8.78 top-1 points. Candidate-only and query-only controls remain at chance, so neither
+static memorability nor query priors explain the result. The shuffled control stays above chance
+because another issue from the same repository often shares APIs and subsystem vocabulary; the
+additional gain from the correct issue is therefore the task-specific associative signal.
+
+This is stronger evidence for the original recall hypothesis than the repair-credit experiments:
+a natural context, without an explicit retrieval instruction, selects human-annotated relevant
+traces stored in a small independent memory layer. It is not yet a complete memory system. Candidate
+traces are supplied offline, exact all-candidate accuracy is only about 7.7%, and this phase does not
+learn write, revise, or forget. The next architectural step is a shared trace projection with the
+ContextBench activation head and the Open-SWE delayed action head trained as separate objectives.
+
+## Frozen Gemma representation follow-up
+
+The feature pipeline now also accepts `--encoder gemma`. It extracts normalized final-token hidden
+states or masked mean-pooled states from the pretrained `google/gemma-3-270m` backbone. The model is
+frozen and the grouped-project protocol is unchanged. Float16 inference on MPS produced NaNs, so the
+final extractor uses float32 and fails explicitly on non-finite features.
+
+Five-seed results show that pooling is decisive:
+
+| Frozen representation / training budget | Balanced accuracy | Shuffled query | Top-1 | Shuffled Top-1 |
+| --- | ---: | ---: | ---: | ---: |
+| Gemma last token, 64d / 600 steps | 0.5015 +/- 0.0018 | 0.4963 +/- 0.0057 | 0.4806 +/- 0.0055 | 0.4728 +/- 0.0051 |
+| Gemma masked mean, 64d / 600 steps | 0.5681 +/- 0.0048 | 0.5427 +/- 0.0044 | 0.5761 +/- 0.0034 | 0.5126 +/- 0.0023 |
+| **Gemma masked mean, 128d / 2,000 steps** | **0.5862 +/- 0.0044** | **0.5550 +/- 0.0036** | **0.6154 +/- 0.0076** | **0.5408 +/- 0.0103** |
+| BGE, 128d / 2,000 steps | 0.6140 +/- 0.0028 | 0.5710 +/- 0.0020 | 0.6805 +/- 0.0063 | 0.5850 +/- 0.0052 |
+
+The best Gemma condition beats its same-repository shuffled-query control by 3.12 balanced-accuracy
+points and 7.46 top-1 points, so a frozen small generative model does carry usable task-conditioned
+association signal. It remains weaker than the retrieval-trained BGE encoder under the same memory
+head budget. Raw cosine explains part of the gap: BGE positive/negative similarity is 0.7258/0.6603
+with 0.8562 top-1, while Gemma mean pooling is 0.7604/0.7484 with 0.5458 top-1. Gemma's frozen space
+is more anisotropic and less retrieval-separated; the learned memory head improves it but does not
+fully recover the BGE margin.
+
+## Gemma ablations and lightweight adaptation
+
+The follow-up kept the ContextBench split and memory interface fixed while testing inexpensive
+ways to improve Gemma. A five-seed alignment-loss result is directly comparable to the 128d / 2,000
+step row above; the other rows are screening runs used to reject branches before a full sweep.
+
+| Change | Evaluation | Balanced accuracy | Shuffled query | Top-1 | Shuffled Top-1 |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Final mean + cosine alignment weight 1 | 5 seeds, full 5-fold | **0.5946 +/- 0.0024** | 0.5597 +/- 0.0028 | **0.6270 +/- 0.0046** | 0.5504 +/- 0.0042 |
+| Echo second-copy mean + alignment 1 | 5 seeds, full 5-fold | 0.5938 +/- 0.0010 | 0.5601 +/- 0.0010 | 0.6255 +/- 0.0040 | 0.5486 +/- 0.0062 |
+| Layer 15 mean + centering | seed 7, full 5-fold | 0.5824 | 0.5492 | 0.5971 | 0.5307 |
+| BGE + Gemma normalized concatenation | seed 7, full 5-fold | 0.6081 | 0.5666 | 0.6654 | 0.5681 |
+| Dual-encoder memory head | seed 7, full 5-fold | 0.5725 | 0.5463 | 0.5817 | 0.5203 |
+
+Alignment is the only branch adopted: versus the matching unaligned five-seed Gemma result it adds
+0.0084 balanced-accuracy and 0.0116 top-1 while retaining a clear correct-query advantage. Echo
+embeddings, feature centering, a dual head, larger capacity, extra steps, intermediate layers, and
+BGE/Gemma concatenation did not beat their relevant simple baseline. Intermediate layer 15 had
+better raw cosine top-1 (0.6396) than the final layer (0.5458), but its trained head still lost to
+the final-layer head. This is a useful warning that raw nearest-neighbor quality and learnable
+activation quality are not interchangeable.
+
+The echo implementation follows the second-occurrence pooling idea in
+[Echo Embeddings](https://arxiv.org/abs/2402.15449). It does not implement the bidirectional
+attention, masked-next-token adaptation, or contrastive stages of
+[LLM2Vec](https://arxiv.org/abs/2404.05961), so its negative result only rejects the cheap
+repeat-and-pool variant.
+
+A final pilot inserted rank-4 LoRA adapters into `q_proj` and `v_proj` of Gemma's last four layers:
+40,960 trainable backbone parameters. The independent 230,147-parameter memory layer was initialized
+on train-project frozen features and then held fixed. Because full raw-text re-encoding is slow on
+the local MPS machine, this screen used the first 200 episodes of each held-out fold rather than a
+publishable full cross-validation.
+
+| Held-out fold / condition | Balanced accuracy | Shuffled query | Top-1 | Shuffled Top-1 |
+| --- | ---: | ---: | ---: | ---: |
+| Fold 0 frozen | 0.5233 | 0.5092 | 0.5600 | 0.5200 |
+| Fold 0 LoRA, 20 steps, 2e-4 | 0.5360 | 0.5181 | 0.5650 | 0.5200 |
+| Fold 0 LoRA, 50 steps, 2e-4 | **0.5377** | 0.5184 | 0.5600 | 0.5050 |
+| Fold 0 LoRA, 50 steps, 5e-5 | 0.5234 | 0.5048 | 0.5600 | 0.5150 |
+| Fold 0 LoRA, 50 steps, 5e-4 | 0.5318 | 0.5125 | **0.5750** | 0.5200 |
+| Fold 1 frozen | 0.6334 | 0.6018 | **0.7450** | 0.6700 |
+| Fold 1 LoRA, 50 steps, 2e-4 | 0.6375 | 0.6098 | 0.7350 | 0.6650 |
+
+LoRA therefore has a real but weak screening signal: balanced accuracy improved on both tested
+folds, but top-1 declined on the easier fold and the query-control gap did not improve consistently.
+Training all candidates from one episode together also failed to improve balanced accuracy on fold
+0 (0.5234, top-1 0.5650). This branch is not adopted yet. A worthwhile next run would save adapters,
+evaluate all held-out episodes, and repeat every fold/seed; simply scaling adapter steps is not
+justified by the present evidence.

@@ -349,3 +349,75 @@ uv run python train_repair_credit_cv.py \
 Source: [NVIDIA Open-SWE-Traces](https://huggingface.co/datasets/nvidia/Open-SWE-Traces).
 The dataset card states that source repositories use MIT, Apache-2.0, BSD-2-Clause, or
 BSD-3-Clause licenses and includes the SPDX license on each row.
+
+## Phase 11: human-annotated spontaneous context activation
+
+ContextBench supplies 1,136 coding tasks with human-verified gold file spans. We reinterpret each
+gold span as a memory trace that should activate from the natural issue statement. Gold spans from
+other tasks in the same repository are hard `ignore` candidates, so repository vocabulary cannot
+solve the task and the entire repository can remain held out during evaluation.
+
+```text
+candidate code span ──observe()──► persistent 64d trace
+                                           │
+natural issue statement ───────────────────► activate / ignore
+```
+
+The issue contains no explicit recall command. The frozen encoder is not trained; only the trace
+projection and activation relation head receive gradients. Raw code and issue text remain in
+ignored `local-data/`, while the checked experiment operates on frozen embeddings.
+
+```bash
+uv sync --group data --group text
+uv run python download_contextbench.py
+uv run python prepare_contextbench_features.py \
+  --encoder bge --device mps --output artifacts/contextbench-bge.pt
+uv run python train_context_activation_cv.py \
+  --features artifacts/contextbench-bge.pt --steps 600 --seed 7 --summary
+```
+
+To replace the embedding model with frozen hidden states from the pretrained Gemma 3 270M
+backbone while keeping the memory layer and evaluation identical:
+
+```bash
+# First accept the Gemma license and authenticate with Hugging Face.
+hf auth login
+uv run python prepare_contextbench_features.py \
+  --encoder gemma --model google/gemma-3-270m --device mps \
+  --batch-size 16 --max-length 512 --pooling mean \
+  --output artifacts/contextbench-gemma-mean.pt
+uv run python train_context_activation_cv.py \
+  --features artifacts/contextbench-gemma-mean.pt \
+  --memory-dim 128 --steps 2000 --seed 7 --summary
+```
+
+Gemma remains frozen in this comparison. Masked mean pooling is the supported default experiment;
+`--pooling last` is retained as a negative ablation. The pooled state is normalized and passed to the
+learned trace projection; raw text is still excluded from the artifact. Gemma runs in float32 because
+float16 produced non-finite hidden states on MPS. The official Hugging Face repository is gated by
+Google's Gemma terms.
+
+The follow-up scripts test representation and lightweight adaptation without changing the memory
+layer contract:
+
+```bash
+# Extract several hidden layers in one Gemma pass and inspect raw separability.
+uv run python prepare_contextbench_gemma_layers.py --device mps
+uv run python analyze_context_features.py \
+  --features artifacts/gemma-layers/contextbench-gemma-layer-15-mean.pt
+
+# Add the explicit trace/query alignment auxiliary objective.
+uv run python train_context_activation_cv.py \
+  --features artifacts/contextbench-gemma-mean.pt --memory-dim 128 \
+  --steps 2000 --alignment-weight 1 --seed 7 --summary
+
+# Optional 40,960-parameter LoRA pilot on the last four Gemma layers.
+uv sync --group adapt --group data --group text
+uv run python train_gemma_lora_pilot.py \
+  --heldout-fold 0 --max-eval-episodes 200 --steps 50 \
+  --lora-rank 4 --lora-layers 4 --lora-learning-rate 2e-4
+```
+
+The LoRA pilot first trains the independent memory layer from the frozen feature artifact using
+train projects only, freezes that layer, and then updates only Gemma's adapters from raw text. The
+evaluation subset switch is for quick local screening; it must be removed for a full result.
