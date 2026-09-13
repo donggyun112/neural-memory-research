@@ -24,6 +24,40 @@ class SelectiveTraceState:
 
 
 @dataclass(frozen=True)
+class DeferredTraceState:
+    traces: Tensor
+    write_logits: Tensor
+    provisional: Tensor
+    consolidation_logits: Tensor
+    selected: Tensor
+    strengths: Tensor
+
+
+def hard_top_k(logits: Tensor, eligible: Tensor, ratio: float) -> tuple[Tensor, Tensor]:
+    """Select a fixed fraction of the eligible slots and keep a gradient path.
+
+    The forward pass is a genuine discrete choice, so a rejected slot is absent
+    rather than downweighted.  The straight-through strength carries the later
+    loss back into whichever gate produced ``logits``.
+    """
+    if logits.shape != eligible.shape:
+        raise ValueError("logits and eligible mask must have the same shape")
+    if not 0.0 < ratio <= 1.0:
+        raise ValueError("ratio must be inside (0, 1]")
+    masked = logits.masked_fill(~eligible, -torch.inf)
+    selected = torch.zeros_like(eligible)
+    for row in range(len(eligible)):
+        available = int(eligible[row].sum())
+        if available == 0:
+            continue
+        keep = max(1, round(available * ratio))
+        selected[row, masked[row].topk(keep).indices] = True
+    probabilities = masked.sigmoid().masked_fill(~eligible, 0.0)
+    strengths = selected.float() + probabilities - probabilities.detach()
+    return selected, strengths
+
+
+@dataclass(frozen=True)
 class FastWeightState:
     matrix: Tensor
     gate_logits: Tensor
@@ -234,6 +268,104 @@ class SelectiveWriteRecallMemory(nn.Module):
     ) -> tuple[Tensor, SelectiveTraceState]:
         state = self.write(candidate_features, write_context, masks)
         return self.recall(state, recall_context), state
+
+
+class DeferredConsolidationMemory(nn.Module):
+    """Hold a provisional set, let a later related event consolidate it, then recall.
+
+    Stage one sees only the candidates: no query and no outcome exist yet, which
+    is where a single-stage writer must already commit.  Stage two receives one
+    later event and may narrow the provisional set, but cannot recover anything
+    stage one dropped.  The gap between this and a single-stage writer at the
+    same final capacity is the value of deferring.
+    """
+
+    def __init__(
+        self,
+        feature_dim: int,
+        memory_dim: int = 64,
+        provisional_ratio: float = 0.5,
+        keep_ratio: float = 0.25,
+    ) -> None:
+        super().__init__()
+        if feature_dim < 1 or memory_dim < 1:
+            raise ValueError("dimensions must be positive")
+        if not 0.0 < keep_ratio <= provisional_ratio <= 1.0:
+            raise ValueError("ratios must satisfy 0 < keep_ratio <= provisional_ratio <= 1")
+        self.provisional_ratio = provisional_ratio
+        self.keep_ratio = keep_ratio
+        self.candidate_projection = nn.Linear(feature_dim, memory_dim)
+        self.event_projection = nn.Linear(feature_dim, memory_dim)
+        self.recall_projection = nn.Linear(feature_dim, memory_dim)
+        self.write_gate = nn.Sequential(
+            nn.Linear(memory_dim, memory_dim), nn.GELU(), nn.Linear(memory_dim, 1)
+        )
+        self.consolidation_head = nn.Sequential(
+            nn.Linear(memory_dim * 4, memory_dim), nn.GELU(), nn.Linear(memory_dim, 1)
+        )
+        self.recall_head = nn.Sequential(
+            nn.Linear(memory_dim * 4, memory_dim), nn.GELU(), nn.Linear(memory_dim, 1)
+        )
+
+    @staticmethod
+    def _relation(left: Tensor, right: Tensor) -> Tensor:
+        return torch.cat((left, right, left * right, (left - right).abs()), dim=-1)
+
+    def _paired(self, traces: Tensor, context: Tensor, projection: nn.Module) -> Tensor:
+        projected = torch.tanh(projection(context))[:, None, :].expand_as(traces)
+        return self._relation(traces, projected)
+
+    def write(self, candidate_features: Tensor, masks: Tensor) -> DeferredTraceState:
+        if candidate_features.ndim != 3:
+            raise ValueError("candidates must have shape [batch, traces, features]")
+        if masks.shape != candidate_features.shape[:2]:
+            raise ValueError("masks must match candidate trace axes")
+        traces = torch.tanh(self.candidate_projection(candidate_features))
+        write_logits = self.write_gate(traces).squeeze(-1)
+        provisional, strengths = hard_top_k(write_logits, masks, self.provisional_ratio)
+        return DeferredTraceState(
+            traces=traces * strengths[..., None],
+            write_logits=write_logits,
+            provisional=provisional,
+            consolidation_logits=torch.zeros_like(write_logits),
+            selected=provisional,
+            strengths=strengths,
+        )
+
+    def consolidate(self, state: DeferredTraceState, event: Tensor) -> DeferredTraceState:
+        """Narrow the provisional set using one later event, keeping the discard final."""
+        if event.ndim != 2:
+            raise ValueError("event must have shape [batch, feature_dim]")
+        logits = self.consolidation_head(
+            self._paired(state.traces, event, self.event_projection)
+        ).squeeze(-1)
+        ratio = self.keep_ratio / self.provisional_ratio
+        selected, strengths = hard_top_k(logits, state.provisional, ratio)
+        combined = state.strengths * strengths
+        return DeferredTraceState(
+            traces=state.traces * strengths[..., None],
+            write_logits=state.write_logits,
+            provisional=state.provisional,
+            consolidation_logits=logits,
+            selected=selected,
+            strengths=combined,
+        )
+
+    def recall(self, state: DeferredTraceState, query: Tensor) -> Tensor:
+        logits = self.recall_head(
+            self._paired(state.traces, query, self.recall_projection)
+        ).squeeze(-1)
+        return logits + (state.strengths - 1.0) * 8.0
+
+    def forward(
+        self,
+        candidate_features: Tensor,
+        event: Tensor,
+        query: Tensor,
+        masks: Tensor,
+    ) -> tuple[Tensor, DeferredTraceState]:
+        state = self.consolidate(self.write(candidate_features, masks), event)
+        return self.recall(state, query), state
 
 
 class FastWeightRecallMemory(nn.Module):
