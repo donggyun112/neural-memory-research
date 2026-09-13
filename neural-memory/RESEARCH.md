@@ -161,10 +161,10 @@ being too few to identify a richer retention policy rather than to the formulati
 
 | Prior work | Relation to this project |
 | --- | --- |
-| [Learning to Evict from KV Cache](https://arxiv.org/abs/2602.10238) | Per-head ~650K-parameter agents trained to rank tokens by future attention. This is already a learned future-utility write gate, so "learned write gating" is no longer a differentiator. Differs by acting on KV tokens inside the model rather than semantic traces beside a frozen encoder, and by being single-stage. |
-| RecMem (arXiv:2605.16045) | Closest two-stage system: every turn enters a subconscious vector layer and is promoted by threshold. Training-free, promotion-only, and never discards, so it does not face irreversible capacity loss. |
-| [What Eviction Destroys](https://arxiv.org/abs/2609.08279) | Independent support rather than competition: a restore-counterfactual audit attributing 67 to 73 percent of errors to irreversible destruction at an 80k budget, and all of them at 8k. Corroborates the phase 15 finding that the whole task-level shortfall is write selection. |
-| AgeMem (arXiv:2601.01885) | Learns store/retrieve/update/discard by reinforcement, but fine-tunes the language model itself rather than training a separate small layer. |
+| [Learning to Evict from Key-Value Cache](https://arxiv.org/abs/2602.10238) (KVP, ICML 2026) | Per-head reinforcement-learned agents rank tokens by predicted usefulness. This is already a learned future-utility write gate, so "learned write gating" is no longer a differentiator. Differs by acting on KV tokens inside the model rather than semantic traces beside a frozen encoder, and by being single-stage. |
+| [RecMem](https://arxiv.org/abs/2605.16045) (ACL 2026 Findings) | Closest two-stage system: every interaction enters a subconscious embedding layer and an LLM consolidates only when sustained recurrence appears among semantically similar interactions, cutting construction tokens up to 87%. Promotion-only and never discards, so it does not face irreversible capacity loss. |
+| [What Eviction Destroys](https://arxiv.org/abs/2609.08279) | Independent support rather than competition: a restore-counterfactual audit attributing 60 to 73 percent of corrected errors to irreversible eviction at an 80k budget, and all of them at 8k. Corroborates the phase 15 finding that the whole task-level shortfall is write selection. |
+| [Agentic Memory](https://arxiv.org/abs/2601.01885) (ACL 2026) | Learns unified long- and short-term memory management with three-stage reinforcement learning and a step-wise GRPO variant for sparse memory-action rewards. Whether the backbone language model is itself updated is not stated in the abstract and was not verified. |
 
 The remaining differentiators are the two-stage deferral and the irreversible-discard semantic-trace
 setting, not learned write gating as such.
@@ -181,5 +181,9 @@ setting, not learned write gating as such.
   ([Ryan & Frankland, Nat Rev Neurosci 2022](https://pubmed.ncbi.nlm.nih.gov/35027710/)).
 - Kenyon cell connectivity is mostly but not entirely random; food-responsive projection neurons are
   a reported exception ([eLife 2022](https://elifesciences.org/articles/77578)).
-- Neuromem (arXiv:2602.13967) separates write from consolidation and eviction, but whether any stage
-  is trained was not verified. Read it before citing.
+- [Neuromem](https://arxiv.org/abs/2602.13967) is a streaming-memory testbed that decomposes the
+  lifecycle into data structure, normalization, consolidation policy, query formulation, and context
+  integration. It treats consolidation as a distinct dimension, but whether any stage carries learned
+  parameters is not stated in the abstract and was not verified.
+
+All arXiv identifiers in this survey were checked against the listing pages on 2026-09-14.
