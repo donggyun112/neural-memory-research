@@ -58,3 +58,25 @@ def test_recall_suppresses_every_discarded_trace() -> None:
 def test_ratios_must_be_ordered() -> None:
     with pytest.raises(ValueError):
         DeferredConsolidationMemory(16, 8, provisional_ratio=0.25, keep_ratio=0.5)
+
+
+def test_similarity_feature_is_required_once_declared() -> None:
+    model = DeferredConsolidationMemory(16, 8, similarity_feature=True)
+    state = model.write(torch.randn(2, 8, 16), torch.ones(2, 8, dtype=torch.bool))
+    with pytest.raises(ValueError):
+        model.consolidate(state, torch.randn(2, 16))
+
+
+def test_similarity_feature_changes_the_consolidation_decision() -> None:
+    torch.manual_seed(11)
+    candidates = torch.randn(6, 8, 16)
+    event = torch.randn(6, 16)
+    plain = DeferredConsolidationMemory(16, 8, similarity_feature=False)
+    enriched = DeferredConsolidationMemory(16, 8, similarity_feature=True)
+    similarity = enriched.encoder_similarity(candidates, event)
+    assert similarity.shape == (6, 8)
+    masks = torch.ones(6, 8, dtype=torch.bool)
+    plain_out = plain.consolidate(plain.write(candidates, masks), event)
+    rich_out = enriched.consolidate(enriched.write(candidates, masks), event, similarity)
+    assert plain_out.selected.shape == rich_out.selected.shape
+    assert enriched.consolidation_head[0].in_features == plain.consolidation_head[0].in_features + 1

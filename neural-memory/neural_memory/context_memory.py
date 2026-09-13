@@ -286,6 +286,7 @@ class DeferredConsolidationMemory(nn.Module):
         memory_dim: int = 64,
         provisional_ratio: float = 0.5,
         keep_ratio: float = 0.25,
+        similarity_feature: bool = False,
     ) -> None:
         super().__init__()
         if feature_dim < 1 or memory_dim < 1:
@@ -294,6 +295,11 @@ class DeferredConsolidationMemory(nn.Module):
             raise ValueError("ratios must satisfy 0 < keep_ratio <= provisional_ratio <= 1")
         self.provisional_ratio = provisional_ratio
         self.keep_ratio = keep_ratio
+        # The write stage trains candidate_projection for write-worthiness and
+        # then freezes it, so a trace may no longer carry what stage two needs to
+        # match the later event. This optionally hands stage two the untouched
+        # frozen-encoder similarity instead of making it rediscover one.
+        self.similarity_feature = similarity_feature
         self.candidate_projection = nn.Linear(feature_dim, memory_dim)
         self.event_projection = nn.Linear(feature_dim, memory_dim)
         self.recall_projection = nn.Linear(feature_dim, memory_dim)
@@ -301,7 +307,9 @@ class DeferredConsolidationMemory(nn.Module):
             nn.Linear(memory_dim, memory_dim), nn.GELU(), nn.Linear(memory_dim, 1)
         )
         self.consolidation_head = nn.Sequential(
-            nn.Linear(memory_dim * 4, memory_dim), nn.GELU(), nn.Linear(memory_dim, 1)
+            nn.Linear(memory_dim * 4 + int(similarity_feature), memory_dim),
+            nn.GELU(),
+            nn.Linear(memory_dim, 1),
         )
         self.recall_head = nn.Sequential(
             nn.Linear(memory_dim * 4, memory_dim), nn.GELU(), nn.Linear(memory_dim, 1)
@@ -332,13 +340,18 @@ class DeferredConsolidationMemory(nn.Module):
             strengths=strengths,
         )
 
-    def consolidate(self, state: DeferredTraceState, event: Tensor) -> DeferredTraceState:
+    def consolidate(
+        self, state: DeferredTraceState, event: Tensor, similarity: Tensor | None = None
+    ) -> DeferredTraceState:
         """Narrow the provisional set using one later event, keeping the discard final."""
         if event.ndim != 2:
             raise ValueError("event must have shape [batch, feature_dim]")
-        logits = self.consolidation_head(
-            self._paired(state.traces, event, self.event_projection)
-        ).squeeze(-1)
+        relation = self._paired(state.traces, event, self.event_projection)
+        if self.similarity_feature:
+            if similarity is None:
+                raise ValueError("this model was built to consume a similarity feature")
+            relation = torch.cat((relation, similarity[..., None]), dim=-1)
+        logits = self.consolidation_head(relation).squeeze(-1)
         ratio = self.keep_ratio / self.provisional_ratio
         selected, strengths = hard_top_k(logits, state.provisional, ratio)
         combined = state.strengths * strengths
@@ -357,6 +370,11 @@ class DeferredConsolidationMemory(nn.Module):
         ).squeeze(-1)
         return logits + (state.strengths - 1.0) * 8.0
 
+    @staticmethod
+    def encoder_similarity(candidate_features: Tensor, event: Tensor) -> Tensor:
+        """Frozen-encoder similarity between each candidate and the later event."""
+        return torch.einsum("etf,ef->et", candidate_features, event)
+
     def forward(
         self,
         candidate_features: Tensor,
@@ -364,7 +382,12 @@ class DeferredConsolidationMemory(nn.Module):
         query: Tensor,
         masks: Tensor,
     ) -> tuple[Tensor, DeferredTraceState]:
-        state = self.consolidate(self.write(candidate_features, masks), event)
+        similarity = (
+            self.encoder_similarity(candidate_features, event)
+            if self.similarity_feature
+            else None
+        )
+        state = self.consolidate(self.write(candidate_features, masks), event, similarity)
         return self.recall(state, query), state
 
 
