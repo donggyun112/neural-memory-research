@@ -22,6 +22,32 @@ VARIANTS = {
 }
 
 
+def resolve_variants(
+    names: str, ratios: str, modes: str, keep_ratio: float
+) -> dict[str, tuple[float, str]]:
+    """Named variants by default, or a provisional-capacity sweep when asked.
+
+    The sweep traces the axis between deciding at write time and deciding once
+    the later event exists: at ``keep_ratio`` nothing is deferred, at 1.0 nothing
+    is discarded early.
+    """
+    if not ratios:
+        unknown = [name for name in names.split(",") if name not in VARIANTS]
+        if unknown:
+            raise ValueError(f"unknown variants {unknown}; available: {sorted(VARIANTS)}")
+        return {name: VARIANTS[name] for name in names.split(",")}
+    resolved: dict[str, tuple[float, str]] = {}
+    for ratio in ratios.split(","):
+        value = float(ratio)
+        if not keep_ratio <= value <= 1.0:
+            raise ValueError(
+                f"provisional ratio {value} must lie between keep_ratio {keep_ratio} and 1.0"
+            )
+        for mode in modes.split(","):
+            resolved[f"provisional{value:g}_{mode}"] = (value, mode)
+    return resolved
+
+
 def stratified_folds(question_type: Tensor, folds: int) -> Tensor:
     """Assign folds round-robin inside each question type, deterministically."""
     if folds < 2:
@@ -165,6 +191,12 @@ def main() -> None:
     )
     parser.add_argument("--variants", default=",".join(VARIANTS))
     parser.add_argument(
+        "--provisional-ratios",
+        default="",
+        help="sweep these provisional capacities instead of the named variants",
+    )
+    parser.add_argument("--event-modes", default="correct,shuffled")
+    parser.add_argument(
         "--types",
         default="multi-session,temporal-reasoning",
         help=(
@@ -243,8 +275,10 @@ def main() -> None:
     seeds = [int(value) for value in args.seeds.split(",")]
     results: dict[str, dict[str, dict[str, float]]] = {}
 
-    for name in args.variants.split(","):
-        provisional_ratio, event_mode = VARIANTS[name]
+    plan = resolve_variants(
+        args.variants, args.provisional_ratios, args.event_modes, args.keep_ratio
+    )
+    for name, (provisional_ratio, event_mode) in plan.items():
         event = event_tensor(consolidation, event_mode)
         rows: list[dict[str, float]] = []
         for seed in seeds:
