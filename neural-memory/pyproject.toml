@@ -14,6 +14,13 @@ dev = [
 ]
 text = [
   "sentence-transformers>=5.6,<6",
+  "transformers>=5,<6",
+]
+data = [
+  "pyarrow>=18",
+]
+adapt = [
+  "peft>=0.17,<1",
 ]
 
 [tool.pytest.ini_options]
