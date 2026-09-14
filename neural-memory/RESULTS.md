@@ -2979,3 +2979,61 @@ from the same corpus, so the hundred-way choice is easier than an open one. "Old
 the oracle's pick sits, which is a property of this encoder's geometry rather than of the
 conversation. And nothing is trained here — association is plain cosine, and whether a learned reader
 captures any of the 0.134 is exactly the open question this makes askable.
+
+# Phase 45: trained against the future, and out of data before out of ideas
+
+Phase 44's target gives a gradient at every position, so the read can be trained rather than
+hand-built. `PredictiveRead` scores memory bilinearly, `m^T (I + UV^T) q`, initialised at the
+identity so it starts exactly at the cosine baseline; selection is a softmax over memory, making the
+whole read differentiable; the loss is InfoNCE against the same hundred foils the evaluation uses.
+Conversations are held out whole.
+
+One implementation detail decided the first run. With the softmax temperature at one, cosines are
+too narrow a range to select anything and the read returned the mean of memory — 0.0141 against a
+cosine baseline of 0.2958. Starting the temperature at 0.02 makes the untrained model equal the
+baseline it is supposed to begin at.
+
+Five seeds, 3,000 steps, held out by conversation:
+
+| Reader | Top-1 | Top-1, old positions | Per-seed spread, old |
+| --- | ---: | ---: | ---: |
+| Recency | 0.5719 | 0.1652 | 0.1248 |
+| Hard pick, cosine | 0.5603 | 0.1873 | 0.1112 |
+| Soft blend, untrained | 0.5722 | 0.2109 | 0.0880 |
+| **Soft blend, trained** | 0.5872 | **0.2269** | 0.0918 |
+| Best single item in memory | 0.6706 | 0.3402 | 0.1298 |
+
+Decomposed: blending several memory items instead of taking one is worth +0.0236, and training on top
+of that is worth +0.0159.
+
+## The verdict is that the experiment cannot decide
+
+**Both effects are smaller than the seed-to-seed spread.** With five seeds and a spread near 0.09 the
+standard error is about 0.02, so training's +0.0159 is roughly one of them. Nothing here is
+established. Reporting this as "training closed 26% of the gap to the oracle", which the first draft
+of the script printed, would have been the same error as Phase 15's 72-episode gate and Phase 25's
+mechanism table: a point estimate quoted past what the sample supports.
+
+The cause is not subtle. There are 52 conversations because `prepare_longmemeval_turns.py` drops any
+question whose gold answer cannot be found verbatim in an evidence turn, and that discarded 48 of the
+100 sampled. Sixteen conversations in the held-out split is too few for a 0.02 effect.
+
+The separation the decomposition draws is worth keeping regardless of power, because it is the
+distinction this project has misread twice — Phase 29 mistook a hand-set constant for a dead
+component, Phase 36 mistook a metric for a mechanism. Here the parameterisation change, blending
+rather than picking, contributes more than the learning does, and a table reporting only "trained
+against baseline" would have hidden that.
+
+## Also: the oracle is not a ceiling for this read
+
+Phase 44's "oracle" is the best *single* item in memory. A blended read is not restricted to one
+item and can exceed it, which one short run did. The 0.134 headroom quoted in Phase 44 bounds hard
+selection, not what a soft read can reach.
+
+## Interpretation boundary
+
+Fifty-two conversations, five seeds, one encoder, and an effect size around 0.02. The correct
+statement is that the direction is consistent — trained above untrained above hard pick above
+recency, in that order, at every cutoff tried — and that the sample cannot resolve any single step of
+it. Re-running on the full 500 questions is the obvious next move and it is a data preparation job,
+not a modelling one.
