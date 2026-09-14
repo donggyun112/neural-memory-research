@@ -55,6 +55,43 @@ def test_recall_suppresses_every_discarded_trace() -> None:
     assert float(dropped.max()) < float(kept.min())
 
 
+def test_write_context_widens_the_gate_and_still_selects() -> None:
+    torch.manual_seed(3)
+    plain = DeferredConsolidationMemory(16, 8, write_context=False)
+    contextual = DeferredConsolidationMemory(16, 8, write_context=True)
+    assert contextual.write_gate[0].in_features == plain.write_gate[0].in_features * 4
+    masks = torch.ones(4, 8, dtype=torch.bool)
+    state = contextual.write(torch.randn(4, 8, 16), masks)
+    assert state.provisional.sum(dim=1).tolist() == [4, 4, 4, 4]
+
+
+def test_write_context_ignores_masked_slots_in_the_episode_mean() -> None:
+    torch.manual_seed(3)
+    model = DeferredConsolidationMemory(16, 8, write_context=True)
+    candidates = torch.randn(2, 8, 16)
+    masks = torch.ones(2, 8, dtype=torch.bool)
+    masks[:, 5:] = False
+    padded = candidates.clone()
+    padded[:, 5:] = 1e3
+    # Padding beyond the mask must not move the episode summary, and so must not
+    # change which slots win.
+    assert torch.equal(
+        model.write(candidates, masks).provisional, model.write(padded, masks).provisional
+    )
+
+
+def test_correction_bound_limits_the_head_contribution() -> None:
+    torch.manual_seed(5)
+    model = DeferredConsolidationMemory(16, 8, similarity="residual", correction_bound=0.5)
+    candidates = torch.randn(3, 8, 16) * 50.0
+    event = torch.randn(3, 16)
+    similarity = model.encoder_similarity(candidates, event)
+    state = model.write(candidates, torch.ones(3, 8, dtype=torch.bool))
+    logits = model.consolidate(state, event, similarity).consolidation_logits
+    residual = model.similarity_scale * (similarity - similarity.mean(dim=-1, keepdim=True))
+    assert float((logits - residual).detach().abs().max()) <= 0.5 + 1e-5
+
+
 def test_ratios_must_be_ordered() -> None:
     with pytest.raises(ValueError):
         DeferredConsolidationMemory(16, 8, provisional_ratio=0.25, keep_ratio=0.5)

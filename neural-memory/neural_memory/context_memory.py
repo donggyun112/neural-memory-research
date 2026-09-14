@@ -290,6 +290,7 @@ class DeferredConsolidationMemory(nn.Module):
         similarity: SimilarityMode = "none",
         center_similarity: bool = True,
         correction_bound: float = 0.0,
+        write_context: bool = False,
     ) -> None:
         super().__init__()
         if feature_dim < 1 or memory_dim < 1:
@@ -318,8 +319,14 @@ class DeferredConsolidationMemory(nn.Module):
         self.candidate_projection = nn.Linear(feature_dim, memory_dim)
         self.event_projection = nn.Linear(feature_dim, memory_dim)
         self.recall_projection = nn.Linear(feature_dim, memory_dim)
+        # Choosing k of n is comparative, but a gate scoring each candidate in
+        # isolation cannot express "more promising than the rest of this
+        # episode". The context form pairs every trace with the episode mean.
+        self.write_context = write_context
         self.write_gate = nn.Sequential(
-            nn.Linear(memory_dim, memory_dim), nn.GELU(), nn.Linear(memory_dim, 1)
+            nn.Linear(memory_dim * 4 if write_context else memory_dim, memory_dim),
+            nn.GELU(),
+            nn.Linear(memory_dim, 1),
         )
         self.consolidation_head = nn.Sequential(
             nn.Linear(memory_dim * 4 + int(similarity == "feature"), memory_dim),
@@ -352,7 +359,15 @@ class DeferredConsolidationMemory(nn.Module):
         if masks.shape != candidate_features.shape[:2]:
             raise ValueError("masks must match candidate trace axes")
         traces = torch.tanh(self.candidate_projection(candidate_features))
-        write_logits = self.write_gate(traces).squeeze(-1)
+        if self.write_context:
+            weights = masks.to(dtype=traces.dtype)[..., None]
+            episode = (traces * weights).sum(dim=1, keepdim=True) / weights.sum(
+                dim=1, keepdim=True
+            ).clamp_min(1.0)
+            scored = self._relation(traces, episode.expand_as(traces))
+        else:
+            scored = traces
+        write_logits = self.write_gate(scored).squeeze(-1)
         provisional, strengths = hard_top_k(write_logits, masks, self.provisional_ratio)
         return DeferredTraceState(
             traces=traces * strengths[..., None],

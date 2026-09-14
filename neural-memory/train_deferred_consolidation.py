@@ -91,6 +91,7 @@ def train_fold(
     similarity: str,
     center_similarity: bool,
     correction_bound: float,
+    write_context: bool,
     consolidation_objective: str,
     memory_dim: int,
     write_steps: int,
@@ -104,7 +105,7 @@ def train_fold(
     torch.manual_seed(seed)
     model = DeferredConsolidationMemory(
         candidates.shape[-1], memory_dim, provisional_ratio, keep_ratio, similarity,
-        center_similarity, correction_bound,
+        center_similarity, correction_bound, write_context,
     ).to(device)
     masks = torch.ones(candidates.shape[:2], dtype=torch.bool, device=device)
     encoder_similarity = (
@@ -244,6 +245,10 @@ def main() -> None:
         help="cap the consolidation head's contribution; 0 leaves it unbounded",
     )
     parser.add_argument(
+        "--write-context", action="store_true",
+        help="score each candidate against the episode mean instead of alone",
+    )
+    parser.add_argument(
         "--types",
         default="multi-session,temporal-reasoning",
         help=(
@@ -351,6 +356,7 @@ def main() -> None:
                     similarity=similarity_mode,
                     center_similarity=not args.no_center_similarity,
                     correction_bound=args.correction_bound,
+                    write_context=args.write_context,
                     consolidation_objective=args.consolidation_objective,
                     memory_dim=args.memory_dim,
                     write_steps=args.write_steps,
