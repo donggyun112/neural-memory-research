@@ -13,8 +13,15 @@ alone, which information should occupy a bounded memory, update that memory stat
 activate the relevant state from an ordinary future utterance without an explicit search command?
 
 This is deliberately different from asking whether vector search can retrieve a relevant passage.
-The decisive event occurs before the future query exists: the layer must discard most candidates
-and cannot recover a discarded trace later.
+The decisive event was assumed to occur before the future query exists: the layer must discard most
+candidates and cannot recover a discarded trace later.
+
+**Phase 17 measured that assumption and it is wrong.** Sweeping the provisional capacity from an
+immediate two-of-eight commitment to holding all eight until a later event arrives moves retention
+from 0.5281 to 0.6456, so removing the irreversibility entirely is worth about 0.035 to 0.118
+depending on the arm. Over the same span, ranking those candidates by raw cosine to the same event
+reaches 0.9342. The dominant cost is the learned selection mechanism, not the irreversible discard,
+and the research question above should be read as being about that mechanism.
 
 ## Model under test
 
@@ -153,15 +160,25 @@ therefore frame the contribution as **query-hidden capacity selection plus later
 activation**, and treat teacher-free importance discovery as the next hypothesis rather than a
 completed result.
 
+Phase 17 adds two limits. The layer's advantage over a training-free length rule exists only under a
+tight budget: at three or four of eight slots it no longer beats that rule. And deferral was tested
+where the later event is as informative as the query itself, so the result shows a bounded memory
+exploiting clear later evidence, not hard temporal credit assignment.
+
 ## Next decisive experiments
 
 The original items 1 to 3 are complete and reported in `RESULTS.md` Phase 14, item 5 has a gated
-first measurement in Phase 15, and the length-residual question raised in Phase 15 is answered in
-Phase 16. The remaining order is:
+first measurement in Phase 15, the length-residual question raised in Phase 15 is answered in
+Phase 16, and Phase 17 tests two-stage deferral. The remaining order is:
 
-1. Find a public corpus whose evidence is not length-correlated. Phase 16 shows the Claude margin is
-   semantic and that LongMemEval-S cannot corroborate it, so external validation now depends on the
-   benchmark rather than on the layer.
+1. Close the gap between the learned relation head and a training-free cosine rule with the same
+   inputs, which Phase 17 measures at about 0.29 retention and which dominates every other term.
+   Exposing one untransformed similarity scalar recovers 0.0882 of it while a shuffled event recovers
+   none, so the frozen projections rather than the objective are the place to look.
+2. Find a public corpus whose evidence is not length-correlated, and whose later evidence degrades
+   with distance. Phase 16 shows the Claude margin is semantic and that LongMemEval-S cannot
+   corroborate it; Phase 17 adds that LongMemEval-S has no measurable deferral window either, so a
+   retention-against-delay curve needs a different corpus.
 2. Test the remaining teacher correlates the way length was tested: turn position, vocabulary rarity,
    and question form each need an explicit-feature arm before the weak teacher can be called clean.
 3. Add explicit retention/forget gates and evaluate knowledge-update examples, where obsolete

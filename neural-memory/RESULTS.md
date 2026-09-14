@@ -1148,3 +1148,77 @@ The corpus limits what can follow. Without a measurable deferral window there is
 retention against delay, and knowledge-update cannot test forgetting as constructed. The next data
 requirement is therefore a corpus whose later evidence degrades with distance, which is a stronger
 condition than the length-neutrality Phase 16 asked for.
+
+## Twenty-seed confirmation
+
+Repeating the headline at twenty seeds moves nothing. Pooled retention is 0.6255 +/- 0.0141 with the
+similarity exposed, 0.5373 +/- 0.0164 deferred, 0.4958 +/- 0.0107 single-stage, 0.4873 +/- 0.0103
+with a shuffled event: the five-seed deferred figure reproduces to four decimals. On the
+228-episode subset the blank-event arm lands at 0.5285 +/- 0.0186 against a single-stage
+0.5283 +/- 0.0162, so there the extra selection step contributes nothing at all and every point of
+the gain is attributable to the event.
+
+## The remaining gap is structural, not undertraining
+
+| Consolidation steps | Single stage | Deferred | Similarity exposed |
+| ---: | ---: | ---: | ---: |
+| 150 | 0.5281 | 0.5254 | 0.5605 |
+| 300 | 0.5281 | 0.5430 | 0.6061 |
+| 600 | 0.5281 | 0.5526 | 0.6289 |
+| 1,200 | 0.5281 | 0.5526 | 0.6307 |
+| 2,400 | 0.5281 | 0.5561 | 0.6289 |
+
+Both deferred arms saturate by roughly 600 steps against an unchanged 0.8132 cosine reference, so
+sixteen times the training budget does not approach it. Trace width does not explain it either:
+32, 64, and 128 dimensions give 0.5474, 0.5526, and 0.5711 deferred. The similarity arm is the
+exception, falling to 0.6018 at 128 dimensions, which is consistent with one scalar being diluted
+inside a wider relation vector.
+
+## Deferral buys less than the premise assumed
+
+Sweeping the provisional capacity traces the axis between committing at write time and waiting for
+the event. Each capacity carries its own shuffled-event control.
+
+| Provisional capacity | Deferred | Similarity exposed | Shuffled control |
+| --- | ---: | ---: | ---: |
+| 2 of 8, no deferral | 0.5281 | 0.5281 | 0.5281 |
+| 3 of 8 | 0.5509 | 0.5982 | 0.5202 |
+| 4 of 8 | 0.5526 | 0.6289 | 0.5167 |
+| 6 of 8 | 0.5596 | 0.6439 | 0.5263 |
+| 8 of 8, nothing discarded early | 0.5632 | **0.6456** | 0.5325 |
+
+Three readings. Most of the benefit arrives at the first step: holding one extra slot reaches 0.5982
+of an eventual 0.6456 in the similarity arm, about three quarters of the total gain. The shuffled
+control is flat near 0.52 at every capacity, so nothing here comes from capacity itself.
+
+The third reading revises the project's premise. At full provisional capacity there is no
+irreversible early discard at all, and retention still stops at 0.6456 against the 0.9342 achieved by
+ranking the same candidates by raw cosine to the same event. The decisive loss is therefore not the
+early discard that `PAPER.md` frames as the central difficulty; it is the learned selection
+mechanism. Removing the irreversibility entirely buys 0.0351 in the plain arm, while the gap to a
+training-free rule with identical information is roughly 0.29.
+
+## The learned advantage needs a tight budget
+
+| Final slots | Longest-k | Write-time decision | Full deferral | Deferral gain |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 0.2895 | 0.3018 | 0.3395 | +0.0377 |
+| 2 | 0.5175 | 0.5281 | 0.5632 | +0.0351 |
+| 3 | 0.7237 | 0.6930 | 0.7184 | +0.0254 |
+| 4 | 0.8333 | 0.8307 | 0.8465 | +0.0158 |
+
+The deferral gain shrinks monotonically as capacity loosens, which matches the competitive-allocation
+reading in `RESEARCH.md`: deferring matters most when the budget binds. It also bounds the claim. At
+three and four slots the learned model no longer beats the training-free length rule, so the
+advantage reported throughout this phase exists only under tight capacity, where a length heuristic
+has little room to work.
+
+## Revised boundary
+
+The two-stage result stands and is robust to seeds, training budget, and trace width. What does not
+stand is the framing that made it interesting. The irreversible write-time discard was supposed to be
+the hard part; measured directly, it costs about 0.035 retention, while the learned selection
+mechanism costs about 0.29 against a rule with the same inputs. Any further work on deferral
+schedules optimises the smaller term. The larger one is the relation head, and the fact that exposing
+one untransformed scalar recovers 0.0882 of it suggests the frozen projections, not the objective,
+are where the information is lost.
