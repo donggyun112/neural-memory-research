@@ -1753,3 +1753,76 @@ three seeds — but it is not the kind of margin that would justify adopting the
 performance grounds alone. Its better justification remains the one from Phase 23: a pathway that
 can only add is rank-preserving, and a constraint forcing gains to trade off is one way to guarantee
 it can reorder.
+
+# Phase 26: linking, replay, and what reading does
+
+Date: 2026-09-14
+
+The last three measurements of the redesign. Two are falsified in ways that name the write rule as
+the cause, and one holds.
+
+## Measurement 6: excitability links nothing, and the write rule is why
+
+Excitability is modelled as a bias that makes recently used units easier to recruit and fades
+afterwards, so documents written close together compete for the same units. It does exactly that:
+consecutive codes share 0.2257 of their active units at zero gain, 0.7376 at 0.05 and 0.9806 at 0.15.
+
+Sharing substrate does not produce linking. Cross-recall by write-order separation, at gain 0.05:
+0.5971 at distance one, rising to 0.6228 by distance three and flat after. Adjacent documents are the
+*least* linked, not the most. At gain 0.15, where codes overlap almost completely, every distance
+collapses to about 0.554 and the distinctions are gone.
+
+The delta rule explains it. Writing a document subtracts what the state already returns for its key,
+and when the previous document shares that key, the subtraction removes precisely the neighbour's
+contribution. Error-correcting storage converts shared substrate into anti-linking.
+
+Replacing the write with a plain Hebbian deposit reverses the sign, which is the check that isolates
+the cause. At gain 0.05 cross-recall runs 0.7465 at distance one down to 0.7430 at distance six, a
+small but monotone gradient in the predicted direction. The cost is visible in the same row: Hebbian
+cross-recall sits near 0.74 everywhere against 0.55 to 0.62 for the delta rule, because without error
+correction everything blurs into everything.
+
+## Measurement 8: offline replay works, and is the cleanest of the three
+
+Twenty-four documents are stored, eight are rehearsed offline by re-applying their eligibility with
+no new input, and sixteen further documents are then written to create interference to survive.
+
+| Replay rounds | 0 | 1 | 2 | 4 |
+| --- | ---: | ---: | ---: | ---: |
+| Rehearsed traces | 0.9164 | 0.9244 | 0.9293 | 0.9323 |
+| Skipped traces | 0.9162 | 0.9151 | 0.9138 | 0.9100 |
+| **Gap** | **0.0002** | **0.0093** | **0.0155** | **0.0223** |
+
+The gap is 0.0002 without replay, which is the control working, and grows monotonically with
+rehearsal. Rehearsed traces also gain in absolute terms while skipped ones lose, so this is
+selective consolidation rather than a uniform strengthening: the same total plasticity is being moved
+towards the rehearsed subset and away from the rest.
+
+## Measurement 9: reading does not change what was read
+
+The prediction was that recalled traces drift and repeated recall compounds it. Two facts about the
+store refuse it.
+
+An error-correcting restabilisation is exactly a no-op: a delta-rule update towards the retrieved
+value is zero, because the state already returns that value. And a Hebbian re-deposit along the
+retrieved direction cannot rotate the read either, since the key is a unit vector and the deposit is
+parallel to what was already there. The recalled trace sits at 0.9390 after one recall and 0.9390
+after six, unchanged to four decimals.
+
+What does change is everything else. The other traces fall from 0.9172 to 0.8018 over six recalls of
+one trace, because the deposit reaches them through the overlap between their keys and its. So in
+this store, reading a memory does not distort that memory — it distorts its neighbours.
+
+## Interpretation boundary
+
+Measurements 6 and 9 are falsified for the same underlying reason, and it is worth stating plainly:
+both predictions describe a memory whose writes are not error-correcting. The delta rule was adopted
+in Phase 0 and has been assumed throughout, and it is what prevents linking and what makes
+reconsolidation a no-op. Whether that makes the delta rule wrong or the predictions inapplicable is
+not decided here; what is established is that these two phenomena and error-correcting storage cannot
+coexist.
+
+Measurement 8's result is the narrowest kind of positive. Replay works because re-applying a stored
+delta is straightforwardly additive, so the finding is that selective rehearsal can be expressed in
+this store, not that any rule for choosing what to rehearse has been tested. Nothing here selects;
+the rehearsed subset is chosen at random.
