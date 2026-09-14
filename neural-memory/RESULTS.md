@@ -1826,3 +1826,66 @@ Measurement 8's result is the narrowest kind of positive. Replay works because r
 delta is straightforwardly additive, so the finding is that selective rehearsal can be expressed in
 this store, not that any rule for choosing what to rehearse has been tested. Nothing here selects;
 the rehearsed subset is chosen at random.
+
+# Phase 27: what should actually adapt
+
+Date: 2026-09-14
+
+Phase 21 reported adaptive decay as falsified. That was an overclaim. What it measured was a sweep
+over *constant* decays, one per load, and no constant helping is a weaker statement than no adaptive
+rule helping. The claim in the literature is that the decay rate responds to interference, which a
+sweep cannot test.
+
+## Testing it properly
+
+`analyze_adaptive_decay.py` gives each key unit a running count of how much has been written onto it
+and decays the state's columns in proportion, so forgetting happens where the interference is rather
+than everywhere at once. Compared against the best constant at each load, over similar sets:
+
+| Load | 8 | 16 | 32 | 64 | 128 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Best constant | 0.9518 | 0.9406 | 0.9330 | 0.9251 | 0.9126 |
+| Best adaptive | 0.9517 | 0.9405 | 0.9326 | 0.9238 | 0.9086 |
+| **Adaptive margin** | -0.0000 | -0.0001 | -0.0004 | -0.0013 | **-0.0040** |
+
+The adaptive rule loses, and loses more as load rises. Its best setting is the lowest sensitivity
+tested, which is the setting closest to not decaying at all. The Phase 21 conclusion survives the
+stronger test, and now with the mechanism stated correctly: the delta rule subtracts what the state
+already returns before writing, so interference is corrected at write time and any subsequent decay
+removes signal without removing collisions. This holds for forgetting that responds to local
+crowding, not only for forgetting at a fixed rate.
+
+## Where adaptation does belong
+
+Nothing else in Phases 20 to 26 adapts either. The projections are random, the capture rate is fixed,
+and the sparsity is a constant 32 active units of 512 throughout. The sparsity turns out to be the
+one that should not have been.
+
+Discrimination at three loads, sweeping the active count:
+
+| Load | 8 active | 16 | 32 | 64 | 128 | Best |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 8 | 0.7417 | **0.7458** | 0.7125 | 0.6167 | 0.4250 | 16 |
+| 32 | 0.6708 | 0.7552 | **0.7812** | 0.7312 | 0.5677 | 32 |
+| 128 | 0.5245 | 0.6896 | 0.7883 | **0.8193** | 0.8047 | 64 |
+
+The optimum moves with load, and it moves *denser* as load rises, which is the opposite of the
+intuition that a crowded store should spread its writes more thinly. A sparse code has few units to
+carry each item, so under load each of those units is overloaded; a denser code distributes the
+collision across more of the substrate.
+
+The fixed choice used throughout costs real ground at both ends: 0.0333 at load 8 and 0.0310 at load
+128 against the per-load optimum. That is larger than the entire competitive-allocation effect
+measured in Phase 25.
+
+## Interpretation boundary
+
+One adaptive decay rule was tested, not all of them. Crowding per key unit is the most direct reading
+of "decay adapts to interference", but a rule keyed on prediction error, on time since last write, or
+on the value side rather than the key side remains untried. The claim is that this form does not
+help in an error-correcting store, and that two quite different forms now agree.
+
+The sparsity result is a sweep, not an adaptive mechanism. It establishes that the optimum moves and
+by how much, which is what makes an online rule worth building; it does not show that a rule tracking
+load online would capture that margin, since the load is given here and would have to be inferred
+there.
