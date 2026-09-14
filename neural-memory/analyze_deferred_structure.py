@@ -63,11 +63,37 @@ def main() -> None:
         name: retention(value, targets, args.keep) for name, value in scores.items()
     }
 
+    # An associative matrix of width d can only be credited with what it adds
+    # over similarity in a projection of the same width, because binding a
+    # candidate to itself makes retrieval collapse towards similarity matching.
+    projected: dict[str, float] = {}
+    for width in (12, 24, 48):
+        hits: list[float] = []
+        for seed in (7, 17, 27):
+            generator = torch.Generator().manual_seed(seed)
+            matrix = torch.randn(candidates.shape[-1], width, generator=generator) / width**0.5
+            keys = torch.nn.functional.normalize(torch.tanh(candidates @ matrix), dim=-1)
+            probe = torch.nn.functional.normalize(
+                torch.tanh(payload["query"] @ matrix), dim=-1
+            )
+            similarity = torch.einsum("etd,ed->et", keys, probe)
+            hits.append(float((similarity.argmax(dim=1) == targets).float().mean()))
+        projected[f"width_{width}"] = sum(hits) / len(hits)
+
     output = {
         "episodes": episodes,
         "traces": traces,
         "keep": args.keep,
         "random_capacity": args.keep / traces,
+        "untrained_projected_cosine_top1": projected,
+        "full_cosine_top1": float(
+            (
+                torch.einsum("etf,ef->et", candidates, payload["query"]).argmax(dim=1)
+                == targets
+            )
+            .float()
+            .mean()
+        ),
         "baselines": {
             name: {
                 "all": float(value.mean()),

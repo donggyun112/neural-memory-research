@@ -22,6 +22,7 @@ def train_fold(
     memory_dim: int,
     event_gain_bound: float,
     competitive_gain: bool,
+    tie_keys: bool,
     steps: int,
     batch_size: int,
     learning_rate: float,
@@ -36,7 +37,7 @@ def train_fold(
     torch.manual_seed(seed)
     model = AssociativeDeferredMemory(
         candidates.shape[-1], memory_dim, event_gain_bound=event_gain_bound,
-        competitive_gain=competitive_gain,
+        competitive_gain=competitive_gain, tie_keys=tie_keys,
     )
     masks = torch.ones(candidates.shape[:2], dtype=torch.bool)
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-3)
@@ -63,6 +64,7 @@ def main() -> None:
     parser.add_argument("--memory-dim", type=int, default=12)
     parser.add_argument("--event-gain-bound", type=float, default=1.0)
     parser.add_argument("--no-competitive-gain", action="store_true")
+    parser.add_argument("--untied-keys", action="store_true")
     parser.add_argument("--event-modes", default="correct,shuffled,blank")
     parser.add_argument("--steps", type=int, default=1200)
     parser.add_argument("--batch-size", type=int, default=32)
@@ -109,6 +111,7 @@ def main() -> None:
                     memory_dim=args.memory_dim,
                     event_gain_bound=args.event_gain_bound,
                     competitive_gain=not args.no_competitive_gain,
+                    tie_keys=not args.untied_keys,
                     steps=args.steps,
                     batch_size=args.batch_size,
                     learning_rate=args.learning_rate,
