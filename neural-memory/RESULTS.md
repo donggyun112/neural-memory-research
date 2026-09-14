@@ -1889,3 +1889,42 @@ The sparsity result is a sweep, not an adaptive mechanism. It establishes that t
 by how much, which is what makes an online rule worth building; it does not show that a rule tracking
 load online would capture that margin, since the load is given here and would have to be inferred
 there.
+
+## Building the rule, and which signal it can use
+
+The obvious signal is the crowding a new document meets: read the state with the dense projection
+before sparsifying, and see how much comes back. It is available at the right moment and zero on an
+empty state, and it fails. Across a hundred-and-twenty-eight-fold change in load it only runs from
+0.4523 to 1.0096, so a rule reading it moved its active count from 18.4 to 21.4 where the sweep asks
+for 16 to 64. That arm beat the fixed choice at load 8 by 0.0479 and lost by 0.0405 at load 128.
+
+The state's own magnitude does not saturate: 1.0000, 1.9754, 3.0128, 5.3144 at loads of one, eight,
+thirty-two and a hundred and twenty-eight. The active counts the sweep prefers sit close to a fixed
+power of it, and fitting the two endpoints gives roughly `6.1 * norm^1.4`. This is internal — the
+memory is reading how large it has become, not being told how many documents it holds.
+
+| Load | 8 | 32 | 128 |
+| --- | ---: | ---: | ---: |
+| Fixed 32 active | 0.6937 | **0.7792** | 0.7866 |
+| **Adaptive** | **0.7438** | 0.7740 | **0.7979** |
+| Oracle over the grid | 0.7271 | 0.7792 | 0.8151 |
+| Oracle's active count | 16 | 32 | 64 |
+| Mean count the rule chose | 11.65 | 20.14 | 39.33 |
+
+The rule tracks the load: its chosen count moves more than threefold across the range. Against the
+fixed choice it gains 0.0500 at load 8 and 0.0113 at 128, and loses 0.0052 at 32 where the fixed
+value happens to be the optimum. At load 8 it also beats the oracle by 0.0167, because the oracle is
+restricted to the powers of two on the sweep grid and the rule is not.
+
+It does not reach the oracle at high load, falling 0.0172 short at 128, and its counts sit below the
+oracle's throughout. The power law was fitted to two points and applies one exponent everywhere, so
+there is margin left in the rule rather than in the idea.
+
+## What this settles about adaptation
+
+The memory's state adapts online and always did; that is what the delta rule is. What was fixed
+everywhere in Phases 20 to 26 was the memory's own dynamics, and the two tested here separate
+cleanly. Forgetting should not adapt, and should not happen at all, because error-correcting storage
+has already handled the interference that decay would be responding to. Sparsity should adapt, can be
+driven by a signal the state computes about itself, and doing so is worth more than any other single
+change measured in this phase group.
