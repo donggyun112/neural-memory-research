@@ -46,6 +46,8 @@ def main() -> None:
     parser.add_argument("--holdout", type=float, default=0.3)
     parser.add_argument("--fixed-sparsity", action="store_true")
     parser.add_argument("--learned-width", action="store_true")
+    parser.add_argument("--sampled-width", action="store_true")
+    parser.add_argument("--policy-weight", type=float, default=1.0)
     parser.add_argument("--seeds", default="7,17,27")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
@@ -75,19 +77,32 @@ def main() -> None:
             value_dim=args.value_dim,
             adaptive=not args.fixed_sparsity,
             learned_width=args.learned_width,
+            sampled_width=args.sampled_width,
         )
         before = evaluate(model, eval_blocks)
         before_seen = evaluate(model, seen_blocks)
         optimiser = torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=1e-4)
         model.train()
+        baseline: float | None = None
         for _ in range(args.steps):
             block = episode_blocks(
                 documents, train_pool, args.load, 1, builder, generator
             )[0]
             logits = model(block)
             loss = F.cross_entropy(logits, torch.arange(len(block)))
+            total = loss
+            if args.sampled_width and model._last_log_probabilities:
+                # The width is sampled, so its parameters get a policy
+                # gradient against the episode's own loss rather than a
+                # relaxation that would soften the selection.
+                reward = -float(loss.detach())
+                baseline = reward if baseline is None else 0.9 * baseline + 0.1 * reward
+                advantage = reward - baseline
+                total = total - args.policy_weight * advantage * torch.stack(
+                    model._last_log_probabilities
+                ).sum()
             optimiser.zero_grad(set_to_none=True)
-            loss.backward()
+            total.backward()
             optimiser.step()
         after = evaluate(model, eval_blocks)
         after_seen = evaluate(model, seen_blocks)
@@ -100,6 +115,8 @@ def main() -> None:
                 "trained_seen": after_seen,
                 "gain_seen": after_seen - before_seen,
                 "mean_width": sum(model._last_widths) / len(model._last_widths),
+                "policy_base": float(model.width_policy.log_base.exp()),
+                "policy_exponent": float(model.width_policy.exponent),
             }
         )
 

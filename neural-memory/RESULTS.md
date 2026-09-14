@@ -2046,7 +2046,28 @@ tail in place gives that up.
 
 This is a structural conflict rather than a failed implementation. The property that makes the
 sparsity valuable is the discreteness of the selection, and the discreteness is exactly what blocks
-the gradient. Making the width learnable in this way removes the thing the width was worth having.
+the gradient. Making the width learnable *this way* removes the thing the width was worth having.
+
+## Keeping the discreteness and training the width anyway
+
+The conflict is only with relaxation. A sampled width keeps top-k exactly as it was and trains the
+distribution it is drawn from by policy gradient against the episode's own loss, so the forward pass
+never sees a soft gate.
+
+| Sparsification | Held-out before | Held-out after | Gain | Mean width |
+| --- | ---: | ---: | ---: | ---: |
+| Counted budget, hand-fitted rule | 0.9128 | 0.9357 | +0.0229 +/- 0.0176 | 27.8 |
+| Graded gate, learned threshold | 0.7812 | 0.8042 | +0.0229 +/- 0.0733 | 17.3 |
+| **Sampled width, policy gradient** | 0.8937 | **0.9245** | **+0.0307 +/- 0.0257** | 22.1 |
+
+The sampled arm gains the most and starts where the hand-fitted rule starts rather than 0.13 below
+it, which is the point: the relaxation's cost was the softness, not the learning. Its policy also
+moves, from a base of 6.100 to 5.394 and an exponent of 1.400 to 1.280, settling on a sparser rule
+than the one fitted to two points of the Phase 27 sweep — mean width 22.1 against 27.8.
+
+The margin over the hand-fitted arm is 0.0078 with seed deviations of 0.0257 and 0.0176, so the
+ordering is not established by three seeds. What is established is that the width can be trained
+without giving up the discreteness, and that doing so lands on a different rule than fitting did.
 
 ## Interpretation boundary
 

@@ -30,6 +30,47 @@ def soft_sparse(projected: Tensor, threshold: Tensor, temperature: Tensor) -> Te
     return F.normalize(projected * gate, dim=-1), gate
 
 
+class WidthPolicy(nn.Module):
+    """A sampled, discrete width whose parameters still receive a gradient.
+
+    Top-k stays exactly as it was, so the sparsity keeps the discreteness that
+    makes it worth having. What changes is how the count is chosen: a width is
+    drawn from a distribution whose mean follows the state's magnitude, and the
+    distribution's parameters are trained by policy gradient against the episode's
+    own loss. The forward pass never sees a relaxation.
+    """
+
+    def __init__(
+        self,
+        base: float = 6.1,
+        exponent: float = 1.4,
+        sigma: float = 3.0,
+        lowest: int = 8,
+        highest: int = 96,
+    ) -> None:
+        super().__init__()
+        if not 1 <= lowest <= highest:
+            raise ValueError("bounds must satisfy 1 <= lowest <= highest")
+        self.log_base = nn.Parameter(torch.tensor(base).log())
+        self.exponent = nn.Parameter(torch.tensor(exponent))
+        self.log_sigma = nn.Parameter(torch.tensor(sigma).log())
+        self.lowest = lowest
+        self.highest = highest
+
+    def mean_width(self, size: float) -> Tensor:
+        return self.log_base.exp() * max(size, 1.0) ** self.exponent
+
+    def sample(self, size: float) -> tuple[int, Tensor]:
+        """Draw a width and return it with the log-probability of the draw."""
+        mean = self.mean_width(size)
+        sigma = self.log_sigma.exp().clamp(min=0.5)
+        distribution = torch.distributions.Normal(mean, sigma)
+        drawn = distribution.sample()
+        log_probability = distribution.log_prob(drawn)
+        width = int(min(self.highest, max(self.lowest, round(float(drawn)))))
+        return width, log_probability
+
+
 class TrainableMemory(nn.Module):
     """The assembled store with its projections learned rather than random.
 
@@ -52,6 +93,7 @@ class TrainableMemory(nn.Module):
         adaptive: bool = True,
         fixed_active: int = 32,
         learned_width: bool = False,
+        sampled_width: bool = False,
     ) -> None:
         super().__init__()
         if feature_dim < 1 or key_dim < 1 or value_dim < 1:
@@ -66,6 +108,10 @@ class TrainableMemory(nn.Module):
         self.adaptive = adaptive
         self.fixed_active = fixed_active
         self.learned_width = learned_width
+        self.sampled_width = sampled_width
+        self.width_policy = WidthPolicy(
+            base_active, active_exponent, lowest=lowest_active, highest=highest_active
+        )
         # The gate's threshold rises with the log of the state's magnitude, which
         # is the same signal the hand-fitted rule used; here its offset and slope
         # are learned instead of being fitted to two points of a sweep.
@@ -95,8 +141,16 @@ class TrainableMemory(nn.Module):
         matrix = values.new_zeros(values.shape[-1], projected.shape[-1])
         keys = []
         self._last_widths: list[float] = []
+        self._last_log_probabilities: list[Tensor] = []
         for row, value in zip(projected, values, strict=True):
-            if self.learned_width:
+            if self.sampled_width:
+                width, log_probability = self.width_policy.sample(
+                    float(matrix.detach().norm())
+                )
+                self._last_log_probabilities.append(log_probability)
+                key = hard_sparse(row, width)
+                self._last_widths.append(float(width))
+            elif self.learned_width:
                 size = torch.tensor(max(float(matrix.detach().norm()), 1.0))
                 threshold = self.width_offset + self.width_slope * size.log()
                 key, gate = soft_sparse(row, threshold, self.width_temperature)
