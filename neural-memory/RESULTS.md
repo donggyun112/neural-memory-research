@@ -1633,3 +1633,61 @@ and cannot reach anything else, so this demonstrates the design is expressible r
 that a learned version would stay content-free. Nothing is trained; capture and the channel split are
 fixed. And the two-channel reduction is a modelling claim about conditioning assays, which is a
 different question from whether two channels suffice for memory capacity or longevity.
+
+# Phase 24: two time constants, and the answer that changes
+
+Date: 2026-09-14
+
+The reinforcement survey recommended differing decay per channel as the next step after the opponent
+pair, and it meets measurement 4 of the redesign. The phenomenon to reproduce is specific: in the fly,
+compartments hold their own traces with their own decay, opposing training writes both at once, and
+the expressed valence flips as the fast compartment fades. Nothing migrates between compartments, so
+a flip is evidence of parallel stores rather than of consolidation moving a trace.
+
+## Setup
+
+One cue is taught two different answers at the same moment. The fast store writes at full strength
+and decays at 0.75 per write; the slow store writes at a quarter strength and decays at 0.99. The
+readout is their sum. Delay is counted in intervening writes, which both stores receive.
+
+The control is one matrix holding both answers, written in sequence on the same key. That is the
+honest comparison: it asks whether a single store with a single decay can produce the same change of
+expressed answer.
+
+## Result
+
+One hundred and twenty episodes per point, three seeds. Margin is agreement with the early answer
+minus agreement with the late one, so a sign change is a change in what the memory expresses.
+
+| Delay | 0 | 1 | 2 | 4 | 8 | 16 | 32 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| **Two stores, margin** | **+0.3034** | +0.1947 | +0.1155 | +0.0106 | **-0.0742** | -0.0852 | -0.0644 |
+| Two stores, early answer | 0.9832 | 0.9277 | 0.8786 | 0.8004 | 0.7191 | 0.6958 | 0.7001 |
+| Two stores, late answer | 0.6799 | 0.7331 | 0.7631 | 0.7898 | 0.7933 | 0.7810 | 0.7645 |
+| One store, margin | -0.6470 | -0.5189 | -0.4161 | -0.2684 | -0.1025 | -0.0132 | +0.0013 |
+
+The crossover is real and it holds. With two stores the early answer leads by 0.3034 immediately,
+the margin passes through zero between four and eight intervening writes, and the late answer stays
+ahead from there to the end of the range. Neither answer is deleted: both agreements sit near 0.7 at
+long delay, and what changes is which one leads.
+
+The single store fails in two distinct ways. It never expresses the early answer at all — starting at
+-0.6470 because the second write on the same key supersedes the first — so one matrix cannot hold two
+answers to one cue however long you wait. And its margin then decays monotonically towards zero, from
+-0.6470 to +0.0013, which is the cue's trace being destroyed by interference until the two answers are
+indistinguishable. Converging to indifference is not a crossover, and the +0.0013 at the longest delay
+is noise, not a flip.
+
+## Interpretation boundary
+
+The two decay rates are chosen, not derived, so this shows that parallel stores with different time
+constants can produce a changing expressed answer, not that any particular pair of constants is
+right. The flip's timing follows directly from the fast store's decay, so it is a property of the
+parameter rather than a prediction.
+
+The stronger claim the result does support is structural, and it is about what a single store cannot
+do. Two answers to one cue are not representable in one delta-rule matrix at all, because the later
+write corrects the earlier one away. Every memory this project built before Phase 23 was a single
+store, which means that whole line could not have represented a revised belief alongside the one it
+replaced — the failure of the knowledge-update subset in Phase 17 now has a mechanical explanation
+rather than only a construction-level one.
