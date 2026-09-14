@@ -27,12 +27,24 @@ from torch.nn import functional as F
 
 
 class PredictiveRead(nn.Module):
-    """A bilinear read that begins as plain cosine and can move away from it."""
+    """A bilinear read that begins as plain cosine and can move away from it.
 
-    def __init__(self, dim: int, rank: int = 32) -> None:
+    Two optional terms widen what it can express, and both are initialised to
+    leave the model exactly where it was without them, so any gain belongs to
+    the term rather than to a different starting point.
+
+    ``context`` lets the cue be a weighted blend of the last few turns instead of
+    only the current one; the weights start as a near one-hot on the current turn.
+    ``age`` gives the scorer an explicit handle on how far back a memory item
+    sits, starting at a coefficient of zero. Recency beat association on the bulk
+    of positions in Phase 44, so a read that cannot see age has to rediscover it
+    through content alone.
+    """
+
+    def __init__(self, dim: int, rank: int = 32, context: int = 1, age: bool = False) -> None:
         super().__init__()
-        if rank < 1:
-            raise ValueError("rank must be positive")
+        if rank < 1 or context < 1:
+            raise ValueError("rank and context must be positive")
         self.left = nn.Parameter(torch.zeros(dim, rank))
         self.right = nn.Parameter(torch.zeros(dim, rank))
         # Cosines span a narrow range, so a temperature of one leaves the softmax
@@ -41,15 +53,38 @@ class PredictiveRead(nn.Module):
         # baseline it is supposed to begin at.
         self.log_temperature = nn.Parameter(torch.tensor(0.02).log())
         nn.init.normal_(self.left, std=0.01)
+        self.context = context
+        weights = torch.zeros(context)
+        weights[0] = 8.0
+        self.context_logits = nn.Parameter(weights)
+        self.age_weight = nn.Parameter(torch.zeros(1)) if age else None
+
+    def cue_from(self, recent: Tensor) -> Tensor:
+        """Blend the most recent turns, newest first, into one cue."""
+        if self.context == 1 or len(recent) == 1:
+            return recent[0]
+        weights = F.softmax(self.context_logits[: len(recent)], dim=0)
+        return F.normalize(weights @ recent, dim=0)
 
     def scores(self, memory: Tensor, cue: Tensor) -> Tensor:
         # I + UV^T, so at initialisation (V = 0) this is exactly memory @ cue.
         shifted = cue + self.right @ (self.left.T @ cue)
-        return memory @ shifted
+        scored = memory @ shifted
+        if self.age_weight is not None:
+            age = torch.arange(len(memory) - 1, -1, -1, dtype=scored.dtype)
+            scored = scored + self.age_weight * torch.log1p(age) / 10.0
+        return scored
 
-    def forward(self, memory: Tensor, cue: Tensor) -> Tensor:
+    def forward(self, memory: Tensor, recent: Tensor) -> Tensor:
+        cue = self.cue_from(recent)
         weights = F.softmax(self.scores(memory, cue) / self.log_temperature.exp(), dim=0)
         return F.normalize(weights @ memory, dim=0)
+
+
+def recent_turns(turns: Tensor, start: int, position: int, context: int) -> Tensor:
+    """The most recent turns of this conversation, newest first."""
+    low = max(start, position - context + 1)
+    return turns[low : position + 1].flip(0)
 
 
 def episode_positions(
@@ -69,6 +104,8 @@ def main() -> None:
     parser.add_argument("--foils", type=int, default=99)
     parser.add_argument("--distant", type=int, default=64)
     parser.add_argument("--rank", type=int, default=32)
+    parser.add_argument("--context", type=int, default=1, help="recent turns forming the cue")
+    parser.add_argument("--age", action="store_true", help="give the scorer an explicit age term")
     parser.add_argument("--steps", type=int, default=3000)
     parser.add_argument("--learning-rate", type=float, default=1e-3)
     parser.add_argument("--eval-positions", type=int, default=40)
@@ -100,7 +137,7 @@ def main() -> None:
         cut = int(episodes * (1.0 - args.holdout))
         train_episodes, eval_episodes = order[:cut].tolist(), order[cut:].tolist()
 
-        model = PredictiveRead(turns.shape[-1], args.rank)
+        model = PredictiveRead(turns.shape[-1], args.rank, args.context, args.age)
 
         @torch.no_grad()
         def evaluate() -> dict[str, float]:
@@ -124,7 +161,9 @@ def main() -> None:
                     candidates = torch.cat([future.unsqueeze(0), futures[foils]])
                     best = int((memory @ future).argmax())
                     reads = {
-                        "trained": model(memory, turns[position]),
+                        "trained": model(
+                            memory, recent_turns(turns, start, position, args.context)
+                        ),
                         "cosine": memory[int((memory @ turns[position]).argmax())],
                         "oracle": memory[best],
                         "recency": memory[-1],
@@ -162,7 +201,7 @@ def main() -> None:
             memory = turns[start:position]
             foils = pool[torch.randperm(len(pool), generator=training)[: args.foils]]
             candidates = torch.cat([futures[position].unsqueeze(0), futures[foils]])
-            read = model(memory, turns[position])
+            read = model(memory, recent_turns(turns, start, position, args.context))
             loss = F.cross_entropy(
                 (candidates @ read).unsqueeze(0) / 0.05, torch.zeros(1, dtype=torch.long)
             )

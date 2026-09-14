@@ -3075,3 +3075,43 @@ would have credited learning with twice what it did.
 
 0.143 of the distance to the best single item in memory is still unclosed, so the target has plenty
 left in it; what is exhausted is this parameterisation, not the problem.
+
+# Phase 46: more context helps, and telling it the age makes it lazy
+
+Two ways to widen the read, both initialised to leave the model exactly where it was without them.
+`context` lets the cue be a learned blend of the last few turns rather than only the current one,
+starting as a near one-hot on the current turn. `age` gives the scorer an explicit handle on how far
+back each memory item sits, starting at a coefficient of zero.
+
+Five seeds, 3,000 steps, 233 conversations, 3,404 paired old positions:
+
+| Read | Top-1, all | Top-1, old | Trained minus hard pick, old |
+| --- | ---: | ---: | --- |
+| Base, current turn only | 0.6037 | 0.2264 | +0.0179 [+0.0091, +0.0267] |
+| **Context 8** | 0.6042 | **0.2341** | **+0.0256** [+0.0165, +0.0341] |
+| Age term | 0.6121 | 0.2212 | +0.0126 [+0.0038, +0.0214] |
+| Context 8 and age | 0.6123 | 0.2209 | +0.0123 [+0.0029, +0.0217] |
+| Context 32 and age | 0.6141 | 0.2247 | +0.0162 [+0.0071, +0.0250] |
+| Best single item | 0.6889 | 0.3697 | — |
+
+**The age term splits the two metrics in opposite directions.** It raises overall top-1, 0.6037 to
+0.6121, and lowers it on the positions that need an old item, 0.2264 to 0.2212. Adding context on top
+does not rescue that: 0.2341 without age becomes 0.2209 with it.
+
+The reading is straightforward. Recency is right on the bulk of a conversation, so a read handed an
+explicit age handle learns to lean on it, which is the correct move for the average position and the
+wrong one exactly where a memory is needed. The term does not add a capability, it offers a shortcut,
+and the model takes it. Nothing about this was visible in the aggregate number, which improved.
+
+Context without age is the best configuration found, 0.2341 on old positions against 0.2264 for the
+base. That comparison is between separate runs rather than paired, and the two intervals overlap, so
+it is suggestive rather than resolved; the age result is a consistent split across two independent
+pairs of runs and is firmer.
+
+## Interpretation boundary
+
+The gap to the best single item in memory is 0.1356 after all of this, essentially unchanged from
+Phase 45's 0.143. Widening the read by these two routes moved it by about 0.008, which says the
+limitation is not the cue or the recency handle. What has not been tried is giving the read more than
+one output — every configuration here surfaces one blended vector, and the target it is scored
+against is a five-turn centroid that may simply not be reachable from any single read.
