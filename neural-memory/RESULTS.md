@@ -1436,3 +1436,74 @@ The immediate consequence for this project is concrete. Every memory built in ph
 dense low-dimensional code, 12 to 128 units with everything active, which is the arm that cannot tell
 similar documents apart. That is a plausible contributor to why those layers never exceeded encoder
 cosine, and it is now a specific thing to change rather than a guess.
+
+# Phase 21: load, decay, and what survives it
+
+Date: 2026-09-14
+
+Measurements 1 and 3 of the redesign share a load curve, so they run together. The store is the
+sparse expanded code Phase 20 adopted: 512 units with 32 active, 64-wide values, random projections,
+plain delta rule, no training. Documents are the same 2,400 session embeddings, and both the similar
+and the dissimilar regime are reported.
+
+## Two metric corrections, both caught by tests
+
+Shared structure was first estimated by centring the stored values before the decomposition. Centring
+makes the basis describe how the documents *differ*, which is the opposite of what is shared, so the
+gist and surface labels were swapped. The basis is now uncentred.
+
+Estimating that basis from the stored set was the second fault. A fixed-rank basis fitted to N
+documents explains less of each one as N grows, so the split moved with the load and surface recovery
+appeared to *rise* from 0.128 at load 8 to 0.308 at 128 — an artefact of the metric, not a property of
+the memory. The basis is now estimated once from a thousand documents and held fixed across every
+load, which makes the loads comparable.
+
+A third correction went the other way. The first decay test asserted that an early write should
+degrade in direction; with orthogonal keys decay only scales a read, so the loss is in magnitude. The
+test was wrong, not the code.
+
+## Result
+
+Twenty-five episodes per load, three seeds.
+
+| Similar documents | 4 | 8 | 16 | 32 | 64 | 128 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Fidelity | 0.9704 | 0.9551 | 0.9433 | 0.9365 | 0.9276 | 0.9166 |
+| Best decay | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 |
+| Gist recovery | 0.8276 | 0.8395 | 0.8497 | 0.8523 | 0.8428 | 0.8341 |
+| Surface recovery | 0.5063 | 0.4651 | 0.4294 | 0.4119 | 0.4083 | 0.4007 |
+
+| Dissimilar documents | 4 | 8 | 16 | 32 | 64 | 128 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Fidelity | 0.9871 | 0.9725 | 0.9571 | 0.9413 | 0.9213 | 0.8950 |
+| Best decay | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 |
+| Gist recovery | 0.7504 | 0.7576 | 0.7513 | 0.7339 | 0.7284 | 0.7302 |
+| Surface recovery | 0.6325 | 0.6083 | 0.5963 | 0.5922 | 0.5696 | 0.5289 |
+
+**Measurement 1, first half: confirmed.** Fidelity falls gradually over a thirty-two-fold increase in
+load, 0.9704 to 0.9166 on similar sets and 0.9871 to 0.8950 on dissimilar ones. There is no cliff.
+
+**Measurement 1, second half: falsified.** The best decay is 1.0 at every load in both regimes, and
+the ordering is monotone: 0.99 beats 0.95 beats 0.9 beats 0.8, everywhere. Decay never helps and
+helping more under load was the prediction. The reason is mechanical. The delta rule already
+subtracts what the state returns before writing, so interference is corrected at write time, and a
+multiplicative decay only erodes what was stored earlier without reducing the collision. The claim
+that decay rate adapts to interference does not transfer to an error-correcting store.
+
+**Measurement 3: confirmed.** Surface recovery falls monotonically with load in both regimes, by
+0.106 on similar sets and 0.104 on dissimilar ones, while gist recovery stays flat — 0.8276 to 0.8341
+on similar, 0.7504 to 0.7302 on dissimilar, with no trend. Superposition removes what is
+idiosyncratic and leaves what is shared, which is the mechanism the gist-preserving description of
+memory asks for, obtained here without anything being trained to produce it.
+
+## Interpretation boundary
+
+Gist is operationalised as a four-dimensional shared subspace of the encoder's geometry, not as
+meaning. That the shared component survives superposition while the residual does not is a statement
+about linear storage of correlated vectors; calling the survivor "gist" is an interpretation the
+measurement does not establish.
+
+The decay result is narrower than it looks. It falsifies decay as a *capacity* mechanism in an
+error-correcting store, which is the only role tested here. Decay in the biological account also
+implements transience over time and enables a later event to act on what is still labile, and neither
+of those is measured by a load curve.
