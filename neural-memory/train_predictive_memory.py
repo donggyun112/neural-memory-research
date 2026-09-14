@@ -142,6 +142,10 @@ def main() -> None:
                     f"{name}_top1_old": (sum(v) / len(v)) if v else float("nan")
                     for name, v in old_hits.items()
                 },
+                # Every reader saw the same positions, so a difference between two
+                # of them is paired and resolves far tighter than a spread over
+                # five seeds suggests.
+                "_old_hits": {name: list(v) for name, v in old_hits.items()},
             }
 
         before = evaluate()
@@ -193,14 +197,50 @@ def main() -> None:
             f"{label:>18} {cells['top1']:9.4f} {cells['top1_old']:12.4f}"
             f" {cells['spread']:22.4f}"
         )
-    blend = summary["soft blend, untrained"]["top1_old"] - summary["hard pick, cosine"]["top1_old"]
-    learned = summary["soft blend, trained"]["top1_old"] - summary["soft blend, untrained"]["top1_old"]
-    print(
-        f"\nblending instead of picking: {blend:+.4f}"
-        f"\ntraining on top of that:     {learned:+.4f}"
-    )
+    import numpy as np
 
-    output = {"config": vars(args), "per_seed": rows, "summary": summary}
+    paired = {
+        label: np.concatenate([np.array(row[key]["_old_hits"][name]) for row in rows])
+        for name, key, label in (
+            ("recency", "before", "recency"),
+            ("cosine", "before", "hard"),
+            ("trained", "before", "blend"),
+            ("trained", "after", "trained"),
+            ("oracle", "before", "oracle"),
+        )
+    }
+    print(f"\n{'comparison, old positions':>34} {'difference':>11} {'95% interval':>22}")
+    comparisons = {}
+    for left, right in (
+        ("trained", "blend"),
+        ("blend", "hard"),
+        ("hard", "recency"),
+        ("trained", "hard"),
+    ):
+        gap = paired[left] - paired[right]
+        generator = np.random.default_rng(7)
+        draws = [gap[generator.integers(0, len(gap), len(gap))].mean() for _ in range(5000)]
+        low, high = float(np.percentile(draws, 2.5)), float(np.percentile(draws, 97.5))
+        comparisons[f"{left} minus {right}"] = {
+            "difference": float(gap.mean()),
+            "low": low,
+            "high": high,
+        }
+        print(
+            f"{left + ' minus ' + right:>34} {gap.mean():+11.4f}  [{low:+.4f}, {high:+.4f}]"
+            f" {'resolved' if low > 0 or high < 0 else 'NOT resolved'}"
+        )
+    print(f"\npaired positions compared: {len(paired['trained'])}")
+
+    for row in rows:
+        for key in ("before", "after"):
+            row[key].pop("_old_hits", None)
+    output = {
+        "config": vars(args),
+        "per_seed": rows,
+        "summary": summary,
+        "paired": comparisons,
+    }
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(output, indent=2, sort_keys=True, default=str))

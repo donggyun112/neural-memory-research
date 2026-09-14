@@ -3037,3 +3037,41 @@ statement is that the direction is consistent — trained above untrained above 
 recency, in that order, at every cutoff tried — and that the sample cannot resolve any single step of
 it. Re-running on the full 500 questions is the obvious next move and it is a data preparation job,
 not a modelling one.
+
+## Resolved, on 233 conversations
+
+Loosening nothing and simply preparing all 500 questions yields 233 conversations and 115,007 turns,
+four and a half times the data. Two things change, in opposite directions.
+
+**The effects shrink.** Blending falls from +0.0236 to +0.0093 and training from +0.0159 to +0.0086,
+which is what inflated small-sample estimates do. The per-seed spread falls with them, from about
+0.09 to about 0.043.
+
+**And they resolve**, because the comparison was never really between five seeds. Every reader saw
+the same positions, so the difference is paired, and on 3,404 old positions:
+
+| Comparison | Difference | 95% interval |
+| --- | ---: | --- |
+| Trained minus untrained blend | **+0.0085** | [+0.0006, +0.0165] |
+| Blend minus hard pick | **+0.0094** | [+0.0026, +0.0162] |
+| Hard pick minus recency | **+0.0282** | [+0.0176, +0.0391] |
+| Trained minus hard pick | **+0.0179** | [+0.0091, +0.0267] |
+
+All four resolved. Reading seed spreads rather than pairing the positions had hidden that, in the
+same way the paired form in Phase 33 revealed what a comparison of means had hidden.
+
+| Reader | Top-1 | Top-1, old positions |
+| --- | ---: | ---: |
+| Recency | 0.5904 | 0.1803 |
+| Hard pick, cosine | 0.5849 | 0.2085 |
+| Soft blend, untrained | 0.5961 | 0.2178 |
+| **Soft blend, trained** | 0.6037 | **0.2264** |
+| Best single item in memory | 0.6889 | 0.3697 |
+
+**Training helps, and it is the smallest of the three steps.** Association over recency is worth
++0.028, blending over picking +0.009, and learning on top of both +0.009 — with the last interval
+only just excluding zero. A report of "trained against baseline", +0.0179, would have been true and
+would have credited learning with twice what it did.
+
+0.143 of the distance to the best single item in memory is still unclosed, so the target has plenty
+left in it; what is exhausted is this parameterisation, not the problem.
