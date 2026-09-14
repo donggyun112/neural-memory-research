@@ -2762,3 +2762,62 @@ verbatim, and those may not be a random half. The loads run to 491 because that 
 haystack; nothing here says what happens at 10,000, which is the regime the argument is really about.
 The top-64 row is the honest competitor and it is ahead; the claim is about how each side's cost
 behaves as N grows, not that the filter is more accurate today.
+
+# Phase 42: at the load the argument was about, the fixed-size memory wins
+
+Phase 41 stopped at 491 items because that is one question's haystack. Pooling every question's turns
+gives 25,552 to draw from, which is the regime the scaling claim was actually about. Each question
+keeps all of its own turns in both memories, so the distractors that genuinely resemble the answer
+are always present and only the distant ones scale.
+
+| Load | max cosine | top-16 sum | top-64 sum | top-256 sum | **Filter, O(1)** |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 491 | 0.6042 | 0.9167 | 0.9792 | 1.0000 | **1.0000** |
+| 2,000 | 0.5673 | 0.8590 | 0.9487 | 0.9808 | 0.9744 |
+| 8,000 | 0.5481 | 0.8237 | 0.8750 | 0.9519 | **0.9936** |
+| 25,000 | 0.5385 | 0.7596 | 0.8333 | 0.8974 | **0.9744** |
+
+Fifty times the load costs the filter 0.0256, and it is not monotone — 0.9936 at 8,000 against 0.9744
+at 2,000 — so the honest reading is that it sits at about 0.98 throughout and wobbles by 0.02. Every
+list reader falls. Maximum cosine goes to 0.5385, which is nearly chance. Even top-256, holding one
+percent of everything stored, loses 0.10 across the range.
+
+Paired over the same questions, at 25,000 items:
+
+| Comparison | Difference | 95% interval |
+| --- | ---: | --- |
+| Filter minus max cosine | +0.4359 | [+0.3846, +0.4776] |
+| Filter minus top-16 | +0.2147 | [+0.1474, +0.2821] |
+| Filter minus top-64 | +0.1410 | [+0.0801, +0.2019] |
+| Filter minus top-256 | **+0.0769** | [+0.0288, +0.1282] |
+
+All four resolved. Every slope now runs in the filter's favour, including the one against top-256
+that was flat at 491 and is +0.0769 at 25,000.
+
+## What this is
+
+It is the first result in this project that beats its baselines on a real task, and it took changing
+the question from *level* to *slope*. Read at 48 items in Phase 38 the same mechanism lost by 0.0093
+and was recorded as a failure against a pre-registered criterion. That criterion was not wrong about
+what it measured; it measured a mechanism whose only claim is constant state at a load where constant
+state is worth nothing.
+
+## What it is not
+
+It is not retrieval. The filter answers whether the memory contains something bearing on the cue, not
+which item that is. Phases 31, 34 and 39 stand, and Phase 40 explains why: ranking N items needs N
+comparisons, so no fixed-size state can do it.
+
+## Interpretation boundary
+
+The threat to this result is what scales. Each question's own turns stay in both memories, so
+everything added between 491 and 25,000 comes from *other people's conversations* — semantically
+distant material. A sum over cells absorbs distant noise better than a top-k does, which may be the
+entire effect. The setting this claims to speak to is one person with 25,000 of their own turns, where
+the added material would be near rather than far, and no corpus here can construct that. Until it is
+measured on near distractors, the result should be read as: **against distant clutter, a fixed-size
+accumulator degrades far more slowly than any fixed-budget list reader** — which is a narrower claim
+than the table looks like.
+
+Fifty-two questions also means 0.0769 is four of them. The interval is resolved, and it is resolved
+on fifty-two paired observations, not fifty-two thousand.
