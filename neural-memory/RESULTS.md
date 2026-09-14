@@ -3212,3 +3212,48 @@ One objective, one encoder, one corpus, and no attempt at the regularisation tha
 model survive this sample — weight decay is at its default and nothing was tuned per configuration.
 A better-regularised non-linear read could plausibly land between 0.2397 and 0.2082. What the result
 rules out is the hope that capacity alone was the missing piece, which is what Phase 47 left open.
+
+# Phase 49: the private corpus is smaller than it looked, and so was the sample behind Track A
+
+Phase 48 ends at a data wall, and the obvious place to go is the private Claude corpus: real human
+conversation, and the self-supervised target needs no labels so it applies to any of it. Counted, it
+goes the wrong way.
+
+| Corpus | Conversations | Turns |
+| --- | ---: | ---: |
+| LongMemEval, turn granularity | 233 | **115,007** |
+| Local Claude logs | **50** | **1,467** |
+
+Eighty times less, not more. The move does not work, and the reason it looked like it would is worth
+recording, because it applies to this project's one surviving positive result.
+
+## An episode count is not a sample size
+
+Track A reported 775 training and 574 held-out episodes, which reads as a comfortable sample. Those
+are episodes, drawn many per conversation and many conversations per project, and the held-out split
+is **by project**. Re-running the same extraction on today's logs:
+
+- 340 episodes
+- from **16 projects**
+- median 12 episodes per project, maximum 80
+- split 314 train / 26 eval
+
+So the independent unit is the project, and there are on the order of ten to twenty of them, not 574.
+The standard deviations Track A reports — 0.5920 +/- 0.0099 for the embedding arm, 0.4056 +/- 0.0128
+for the length arm — are spreads over five seeds on a fixed split. They describe initialisation
+noise. They do not describe what happens if a different set of projects is held out, and no number in
+Track A does.
+
+This does not overturn Phase 16. Its margin is 0.1864 retention and 0.3477 top-1, which is far larger
+than anything plausible from resampling a dozen projects, and the length control it rests on is a
+within-sample comparison that project variation affects on both sides. What it does mean is that the
+error bars are decorative, that the result rests on roughly a dozen independent conversations' worth
+of behaviour, and that the phrase "574 held-out episodes" should not be quoted as a sample size.
+
+## Where this leaves the data problem
+
+Nothing local scales. The self-supervised target from Phase 44 is the one asset that transfers, since
+it needs no annotation and applies to any corpus of long conversations. That makes the missing
+ingredient a public multi-session dialogue corpus rather than a labelling effort — a download, not a
+project. Whether any of the findings from Phase 44 onward survive at ten times the conversations is
+the question every one of them now waits on.
