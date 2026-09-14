@@ -1569,3 +1569,67 @@ right variable for a state that has no clock, but it means this does not reprodu
 windows in the animal work; it reproduces their shape. Tag decay is also a free parameter set by
 hand rather than learned or derived, so the result establishes that a fading tag produces a rescue
 window of a tunable width, not what width a real system should have.
+
+# Phase 23: the modulatory pathway, rebuilt from the reinforcement circuit
+
+Date: 2026-09-14
+
+Measurement 10 was held back until the memory was shown to hold something, which Phases 20 to 22
+did. It had also failed twice before: in Phase 18 and again in the associative attempt, the gain
+saturated at its bound and a blank event scored within noise of the correct one.
+
+A survey of the reinforcement side of the same circuit, recorded in `RESEARCH.md`, named two things
+we had omitted. The drive is a prediction error — the return path from the output neurons to the
+dopaminergic neurons implements reinforcement minus what the memory already answers — so a gain with
+nothing subtracted has no reason to stop growing. And the compartments are opponent pairs read as a
+difference, whereas a single positive channel can only rescale the state, which is rank-preserving
+and therefore provably unable to reorder what is retrieved. Modelling work collapses the fifteen
+compartments to two channels differing in sign alone and still recovers conditioning and blocking,
+so two is both the minimum the biology licenses and the maximum that work shows is needed.
+
+## Build
+
+Every write leaves its own update as an eligibility trace. A reinforcement arrives as a probe and a
+sign, and reaches the traces only through coincidence: how strongly each still-eligible trace answers
+that probe, a single scalar per trace. Nothing document-specific is available to the pathway. The
+drive is what the sign asks for minus what the state already delivers, split into an approach and an
+avoidance channel whose difference is applied.
+
+One bug and one sign error had to be found first. Normalising the coincidence response destroyed the
+address: the response magnitude *is* the coincidence, since a trace written on a key near the probe
+answers strongly while one written elsewhere barely answers, and normalising leaves only a direction
+every trace shares. Separately, multiplying the drive by the sign before clamping made a negative
+event strengthen its target, because the requested direction is already carried by the residual and
+the clamping only splits it into channels.
+
+## Result
+
+Sixteen stored documents, one hundred and fifty episodes, three seeds. Coincidence addresses the
+intended trace in 0.8889 of episodes.
+
+| Condition | Change in the target's recall |
+| --- | ---: |
+| Strengthen, prediction error removed | +0.01902 |
+| Strengthen | +0.00401 |
+| Strengthen, mismatched probe | +0.00170 |
+| Weaken, mismatched probe | -0.00185 |
+| **Weaken** | **-0.10249** |
+
+The pathway is no longer inert. Weakening moves the addressed trace by 0.10249 and the same event
+sent to a mismatched probe moves it by 0.00185, a factor of fifty-five, so the effect is specific to
+what the probe addresses rather than to the event occurring.
+
+Two asymmetries in the table are the circuit's own, not artefacts. Depression is much the stronger
+direction, which is what the fly does: dopamine depresses the output that signals the opposite
+valence rather than potentiating agreement. And strengthening is weak precisely because the
+prediction error limits it — a freshly written trace already answers its own probe, so there is
+little left to add, and removing the subtraction raises the same effect nearly fivefold. That is
+blocking, and it is the property that stopped the gain saturating.
+
+## Interpretation boundary
+
+Content-freedom is structural here, as it was in Phase 22: the pathway receives one scalar per trace
+and cannot reach anything else, so this demonstrates the design is expressible rather than measuring
+that a learned version would stay content-free. Nothing is trained; capture and the channel split are
+fixed. And the two-channel reduction is a modelling claim about conditioning assays, which is a
+different question from whether two channels suffice for memory capacity or longevity.

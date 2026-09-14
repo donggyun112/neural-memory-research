@@ -139,6 +139,60 @@ Four properties bear on our design.
   coding against catastrophic forgetting ([arXiv:2107.07617](https://arxiv.org/pdf/2107.07617)) all
   come from this circuit. None of them learns a write gate.
 
+## The reinforcement side of the same circuit
+
+Surveyed 2026-09-14, after the modulatory pathway failed twice as a single scalar gain.
+
+**The input side is genuinely multi-channel.** The hemibrain resolves 21 dopaminergic types, 6 PPL1
+and 15 PAM, tiling the 15 compartments roughly one type each, about 130 neurons in total
+([Li et al., eLife 2020](https://elifesciences.org/articles/62576)). The dimensions are qualitatively
+distinct rather than one axis at different gains: PPL1-γ1pedc reinforces shock, heat and bitter while
+separately carrying hunger-state gating, and PAM-γ5 reinforces sugar and also signals shock omission
+to extinguish an aversive memory, splitting into five subtypes by input connectivity
+([Otto et al., Curr Biol 2020](https://pmc.ncbi.nlm.nih.gov/articles/PMC7443709/)). Tuning, sign and
+time constant vary independently, and the same DAN writes opposite signs depending on its timing
+against the odour.
+
+**The output side is opponent and summed.** Twenty-two canonical output types plus fourteen atypical,
+in three transmitter classes split by lobe. An output neuron's valence is opposite to its
+compartment's dopaminergic valence, and the plasticity is *depression*: the reinforcement turns down
+the output that signals the opposite valence rather than strengthening one that agrees
+([Owald et al. 2015](https://pmc.ncbi.nlm.nih.gov/articles/PMC4674068/);
+[Aso et al., eLife 2014](https://elifesciences.org/articles/04580)). Behaviour follows a weighted sum
+across compartments that is balanced in a naive animal, not a winner.
+
+**The output feeds back into the signal that writes it.** The connectome shows extensive and
+selective output-to-dopaminergic feedback onto DAN dendrites: MBON-γ5β′2a contacts PAM-γ5(fb)
+exclusively, while MBON-γ4γ5 is the strongest input to PPL1-γ1pedc and does not touch PAM-γ5
+([Li et al. 2020](https://elifesciences.org/articles/62576);
+[Otto et al. 2020](https://pmc.ncbi.nlm.nih.gov/articles/PMC7443709/)). Modelling reads that return
+path as reinforcement prediction error computed by subtraction across the opponent pair
+([Bennett, Philippides & Nowotny, Nat Commun 2021](https://doi.org/10.1038/s41467-021-22592-4)).
+
+**Two channels reproduce the behaviour.** Bennett et al. collapse the fifteen compartments to an
+approach and an avoidance channel and recover a broad range of conditioning and blocking results.
+The two differ in sign alone, not in tuning or time constant.
+
+### What this says about our failures
+
+Phase 18 and the associative attempts both ended with a modulatory gain saturating at its bound and
+contributing nothing. Two circuit properties we had omitted explain that directly. A gain with no
+prediction subtracted has no reason to stop growing, whereas a prediction-error drive falls to zero
+once the memory already answers the event. And a single positive channel can only rescale the state,
+which is rank-preserving and therefore provably unable to reorder what is retrieved; an opponent pair
+read as a difference expresses "strengthen this, weaken that", which is what competitive allocation
+needs.
+
+The licensed change is two signed channels sharing one eligibility trace, with the readout as their
+difference and the drive computed as reinforcement minus what the memory already predicts. Per-channel
+decay is the better second step than more channels, since Phase 22 showed tag decay is the parameter
+that creates the rescue window.
+
+**Contested or unverified.** Whether one dopaminergic type per compartment is universal; DAN-to-DAN
+connectivity is absent from both sources, which is absence of evidence rather than a demonstrated
+negative; and the two-channel sufficiency is a modelling claim about conditioning assays, not about
+memory capacity or longevity.
+
 ## What forgetting research says about capacity
 
 Forgetting is an active, default-on process rather than passive leakage: ongoing dopaminergic
