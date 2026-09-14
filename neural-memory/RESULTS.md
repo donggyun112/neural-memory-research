@@ -2060,14 +2060,38 @@ never sees a soft gate.
 | Graded gate, learned threshold | 0.7812 | 0.8042 | +0.0229 +/- 0.0733 | 17.3 |
 | **Sampled width, policy gradient** | 0.8937 | **0.9245** | **+0.0307 +/- 0.0257** | 22.1 |
 
-The sampled arm gains the most and starts where the hand-fitted rule starts rather than 0.13 below
-it, which is the point: the relaxation's cost was the softness, not the learning. Its policy also
-moves, from a base of 6.100 to 5.394 and an exponent of 1.400 to 1.280, settling on a sparser rule
-than the one fitted to two points of the Phase 27 sweep — mean width 22.1 against 27.8.
+The sampled arm starts where the hand-fitted rule starts rather than 0.13 below it, which is the
+point: the relaxation's cost was the softness, not the learning.
 
-The margin over the hand-fitted arm is 0.0078 with seed deviations of 0.0257 and 0.0176, so the
-ordering is not established by three seeds. What is established is that the width can be trained
-without giving up the discreteness, and that doing so lands on a different rule than fitting did.
+### Ten seeds settle it, and against the three-seed reading
+
+Both arms share a seed, and so a split and an evaluation set, which makes the comparison paired.
+
+| Seed | Hand-fitted | Sampled | Difference |
+| ---: | ---: | ---: | ---: |
+| 1 | 0.9547 | 0.9430 | -0.0117 |
+| 2 | 0.9328 | 0.9250 | -0.0078 |
+| 3 | 0.9055 | 0.9484 | +0.0430 |
+| 4 | 0.9453 | 0.9391 | -0.0062 |
+| 5 | 0.9492 | 0.9469 | -0.0023 |
+| 6 | 0.9578 | 0.9656 | +0.0078 |
+| 7 | 0.9609 | 0.9664 | +0.0055 |
+| 8 | 0.9523 | 0.9469 | -0.0055 |
+| 9 | 0.9320 | 0.9219 | -0.0102 |
+| 10 | 0.9695 | 0.9648 | -0.0047 |
+
+The paired difference is +0.0008 with a standard error of 0.0051, t = 0.15, and the sampled arm wins
+on three seeds of ten. **The two are indistinguishable.** Held-out gains are +0.0487 and +0.0503.
+
+Two claims from the three-seed run do not survive. The sampled arm does not gain the most; it gains
+the same. And its policy does not find a sparser rule: over ten seeds the base moves from 6.100 to
+5.960 and the exponent from 1.400 to 1.373, giving a mean width of 27.1 — the same as the hand-fitted
+rule's 27.1. The base of 5.394 and width of 22.1 reported at three seeds were seed variation.
+
+What survives is narrower and still worth having. The width can be trained without giving up the
+discreteness, which the graded gate could not do, and the rule it converges to is the one that
+fitting two points of the Phase 27 sweep already produced. Learning does not improve on that rule; it
+confirms it.
 
 ## Interpretation boundary
 
