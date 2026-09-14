@@ -22,7 +22,12 @@ the actual memory mechanism.
   writing shallowly, and it never read an item the circuit had not seen. Scored on separating
   written from unwritten documents, the best mechanism is a single saturating store (`eta` near
   1) and phase 25's habituated dual-store is the worst above 16 items. Phase 36 also gives this
-  line its first capacity number: 0.98 AUC at 32 documents, 0.63 at 256.
+  line its first capacity number: 0.98 AUC at 32 documents, 0.63 at 256. **Phase 37 then predicts
+  that number from two integers:** the memory is a Bloom filter over Kenyon cell identities, and a
+  parameter-free formula in `k` (cells active) and `m` (cells total) matches measurement within
+  noise once code correlation is removed. Correlation is the entire deviation, and it both lowers
+  peak capacity and softens the ceiling. Measured sparsity optimum 0.02-0.05, against a real
+  APL-enforced 5-10 percent.
 - **Extracted as a reusable layer (phases 19, 26):** `fly_memory_layer.py`, plain numpy,
   proven to run standalone and attached inside `experiments/neural-memory`'s own venv.
 - **Vision line (phases 11-16, 27):** real photoreceptors and retinotopy; interference
@@ -1083,6 +1088,78 @@ load while the synaptic state does not -- but it does say where the loss lives.
 
 ```
 uv run python recognition_under_load_probe.py --trials 20 --loads 8,16,32,64,128,256
+```
+
+## Phase 37: the capacity follows from two integers, and correlation is what bends it
+
+If phase 36's winning rule is a near-binary mark on the KC rows that were active, then the
+capacity is not a curve to be measured mechanism by mechanism -- it is a Bloom filter's
+false-positive rate. An unwritten document reads as written only if *every* cell it activates was
+already marked:
+
+    p   = 1 - (1 - k/m)^N        each cell marked by at least one of N writes
+    AUC = 1 - 0.5 * p^k          a false positive is a tie, worth 0.5
+
+Nothing is fitted. `m` = 2,053 Kenyon cells is counted from the connectome, `k` is counted from
+the codes, `N` is the load. `bloom_capacity_probe.py` runs it against three stores: the real KC
+codes with the counting rule phase 36 used, the same codes clamped so a row is marked once and
+never further, and codes shuffled to independent random subsets of the same size.
+
+| keep | k | written | predicted | real, counting | real, binary | shuffled, binary |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0.02 | 41 | 128 | 0.9801 | 0.7109 | 0.7438 | **0.9821** |
+| 0.02 | 41 | 512 | 0.5007 | 0.5739 | 0.5958 | **0.4986** |
+| 0.05 | 103 | 128 | 0.5661 | 0.7503 | 0.7794 | **0.5687** |
+| 0.10 | 205 | 128 | 0.5001 | 0.7568 | 0.7687 | **0.5120** |
+| 0.10 | 205 | 32 | 0.9996 | 0.9576 | 0.9705 | **0.9985** |
+| 0.20 | 411 | 32 | 0.6381 | 0.9634 | 0.9672 | **0.6351** |
+| 0.40 | 821 | 32 | 0.5000 | 0.8764 | 0.8875 | **0.5069** |
+
+**The formula is essentially exact for independent codes.** Across a twentyfold range of `k` and
+a sixtyfourfold range of `N`, the shuffled column sits within noise of a prediction with no free
+parameters: 0.9801 vs 0.9821, 0.5661 vs 0.5687, 0.6381 vs 0.6351, 0.5007 vs 0.4986. This memory
+is a Bloom filter over Kenyon cell identities, and that is now demonstrated rather than asserted.
+
+**Counting adds nothing.** Clamping so a row is marked once rather than multiplied down again on
+every later write changes the result by at most 0.03 and usually less. The `eta`-near-1 store is
+already binary in effect, which is why the single saturating rule beat every graded mechanism in
+phase 36.
+
+**Correlation is the whole deviation, and it cuts both ways.** Real codes come from one shared
+projection of one corpus, so they overlap far more than random subsets of the same size, and the
+gap runs in opposite directions depending on the regime:
+
+- Where the filter has room (`k` small, moderate load), correlation **hurts**: at `k`=41 and 128
+  writes, 0.7438 against a predicted 0.9801. Correlated documents mark the same popular cells,
+  so a new document finds its cells already taken more often than chance says.
+- Where the filter is saturated, correlation **helps**: at `k`=205 and 128 writes the prediction
+  and the shuffled control both collapse to chance, 0.5001 and 0.5120, while real codes still
+  read 0.7687. Writes concentrating on popular cells is exactly what leaves the rest of the
+  population unmarked, so saturation arrives far later than a uniform filter would predict.
+
+Correlated codes are therefore not simply a degraded version of independent ones. They trade peak
+capacity for a much softer ceiling, which is the more useful shape for a memory that will be
+pushed past its design load.
+
+**The sparsity optimum, and where the fly sits.** Sweeping `keep_ratio` on real codes (binary
+store):
+
+| written | 0.02 | 0.05 | 0.10 | 0.20 | 0.40 |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 128 | 0.7438 | **0.7794** | 0.7687 | 0.7014 | 0.6019 |
+| 512 | **0.5958** | 0.5852 | 0.5699 | 0.5469 | 0.5186 |
+
+The optimum is 0.02-0.05, and `RESEARCH.md` records the real APL-enforced sparsening as keeping
+**5 to 10 percent** of Kenyon cells active. The lower edge of the biological range is where the
+measured capacity peaks. Two cautions before reading anything into that: these codes come from a
+random projection of text embeddings rather than real odour responses, so the correlation
+structure driving the optimum is the corpus's and not the fly's; and this line has been running
+at `keep_ratio` 0.10 throughout, which the table shows is past the peak at every load measured.
+
+### Run
+
+```
+uv run python bloom_capacity_probe.py --trials 20 --keep-ratios 0.02,0.05,0.10,0.20,0.40 --loads 8,32,128,512
 ```
 
 ## Not built yet
