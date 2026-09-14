@@ -1981,3 +1981,56 @@ benefit is about interference, which is what this task measures.
 Nothing is trained. The sparsity exponent, the tag decay, the capture rate and the slow store's
 constants are all fitted or chosen by hand, so the ablation compares designs rather than learned
 solutions.
+
+# Phase 30: training the assembled store
+
+Date: 2026-09-14
+
+Everything from Phase 20 onward used random projections. `TrainableMemory` keeps the structure the
+ablation kept — a sparse expanded code whose width follows the state's magnitude, delta-rule storage,
+no decay — and learns the key and value projections against the only thing the store is asked to do.
+The loss is a listwise cross-entropy over which stored value each probe returns, which is the
+differentiable surrogate for discrimination. The width is read off the state and detached, so the
+projection is trained through the values at the chosen units rather than through how many there are.
+
+Documents are split into disjoint pools and episodes are drawn from one or the other, so a projection
+that memorised particular documents shows it.
+
+## The training curve inverts the conclusion
+
+| Steps | Gain on seen documents | Gain on held-out documents |
+| ---: | ---: | ---: |
+| 50 | -0.2172 | -0.2177 |
+| 150 | -0.1185 | -0.1221 |
+| 400 | +0.0060 | -0.0203 |
+| 1,200 | +0.0932 | **+0.0490** |
+| 3,000 | +0.1154 | **+0.0523 +/- 0.0164** |
+
+Read at four hundred steps this looks exactly like overfitting: the seen pool improves and the
+held-out pool degrades, and that is what was concluded before the longer runs existed. It was
+undertraining. By three thousand steps held-out discrimination goes from 0.8909 to 0.9432, a gain of
+0.0523 that holds across three seeds.
+
+The shape of the early curve is itself the finding. Training does not start from nothing and climb;
+it starts from a random projection that is already a strong solution, destroys it — losing 0.2177
+within fifty steps — and has to climb back before it can do better. A random projection preserves the
+geometry this task depends on, so gradient descent begins by discarding something it must then
+rediscover.
+
+## What remains overfitted
+
+The seen-pool gain is 0.1154 against 0.0523 held out, so more than half of what training buys does
+not transfer. The learned projections are picking up document-specific structure alongside whatever
+generalises. That is a real limit on the result, not a reason to discount it: the transferred half is
+measured on documents the projections never saw.
+
+## Interpretation boundary
+
+Only the projections are learned. The sparsity exponent, its bounds, and the logit scale are still
+hand-set, and the components the Phase 29 ablation found unhelpful on this task — the parallel store
+and the tags — are absent from the trained model rather than trained and found wanting.
+
+The absolute numbers are also not comparable with Phase 29's. Episodes here are drawn from a pool
+that is a fraction of the corpus, so the nearest-neighbour sets are less alike and the task is
+easier: untrained discrimination is 0.89 here against 0.74 in the ablation at the same load. Only the
+gains within this phase should be read.
