@@ -1507,3 +1507,65 @@ The decay result is narrower than it looks. It falsifies decay as a *capacity* m
 error-correcting store, which is the only role tested here. Decay in the biological account also
 implements transience over time and enables a later event to act on what is still labile, and neither
 of those is measured by a load curve.
+
+# Phase 22: the rescue window
+
+Date: 2026-09-14
+
+This is the measurement worth the most in the redesign, because it recovers what no corpus in this
+project could supply. Phase 17 wanted a curve of retention against delay and LongMemEval-S had none:
+its later evidence stayed equally informative at every distance. Here the delay is ours to set.
+
+Tagging and capture says a weak event leaves a tag rather than a lasting change, and a later strong
+event supplies plasticity that the tag captures, provided it arrives inside a window. The strong
+event need not be related to what it rescues.
+
+## Modelling it took two corrections
+
+The first implementation tagged every write and let capture re-apply all recent deltas. Capture then
+made things worse, because the full-strength intervening writes have deltas five times larger than
+the weak target's and re-applying them buries it. The missing piece is the asymmetry that makes the
+mechanism interesting: a strong input is already consolidated and has nothing left to capture. A
+write of strength s now expresses s of its update and tags the unrealised `1 - s`, so a full-strength
+write leaves no tag and only the weak trace stands to gain.
+
+The second correction was the metric. Absolute rescue, recalled-with-capture minus
+recalled-without, *grows* with the gap, because the control falls as interference accumulates and
+leaves more room to improve. That is the baseline moving, not a window. Rescue is now reported
+against what the same trace would have reached had it been written at full strength at the same gap,
+so 1.0 means the lost plasticity was fully recovered and 0.0 means none of it was.
+
+## Result
+
+One hundred and fifty episodes per point, three seeds. Recovered fraction against the number of
+writes between the weak trace and the strong event:
+
+| Tag decay | 0 | 1 | 2 | 4 | 8 | 16 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1.0, no fading | 0.8125 | 0.8064 | 0.8067 | 0.8129 | 0.8263 | 0.8458 |
+| 0.9 | 0.8125 | 0.7620 | 0.7141 | 0.6217 | 0.4553 | 0.2237 |
+| 0.7 | 0.8125 | 0.6572 | 0.5087 | 0.2803 | 0.0733 | 0.0044 |
+| 0.5 | 0.8125 | 0.5248 | 0.2972 | 0.0805 | 0.0051 | 0.0000 |
+
+The window exists and the tag's fading is what creates it. With no fading the recovered fraction is
+flat across a sixteen-fold change in delay, so nothing about waiting is intrinsically costly; the
+loss is the tag, not the interval. With fading, rescue falls monotonically, and the half-life tracks
+the decay rate: roughly seven intervening writes at 0.9, two at 0.7, one at 0.5.
+
+The underlying numbers show the mechanism rather than a rescaling. At tag decay 0.7 and no delay the
+weak trace reads 0.7405 without capture and 0.9019 with it, against a 0.9392 ceiling. At sixteen
+writes of delay the same comparison is 0.7523 against 0.7530, with the ceiling still at 0.8982:
+the plasticity is still available and the trace can no longer take it.
+
+## Interpretation boundary
+
+Content-freedom here is built in, not measured. The capture term multiplies the surviving tags by the
+event's magnitude and never reads its key or value, so the pathway cannot depend on content by
+construction. The only content dependence left is indirect, through the interference the strong
+event's own write adds, and that applies equally to the control.
+
+The window is measured in intervening writes, which is interference rather than time. That is the
+right variable for a state that has no clock, but it means this does not reproduce the hours-long
+windows in the animal work; it reproduces their shape. Tag decay is also a free parameter set by
+hand rather than learned or derived, so the result establishes that a fading tag produces a rescue
+window of a tunable width, not what width a real system should have.
