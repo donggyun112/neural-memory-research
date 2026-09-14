@@ -89,6 +89,9 @@ def train_fold(
     provisional_ratio: float,
     keep_ratio: float,
     similarity: str,
+    center_similarity: bool,
+    correction_bound: float,
+    consolidation_objective: str,
     memory_dim: int,
     write_steps: int,
     consolidation_steps: int,
@@ -100,7 +103,8 @@ def train_fold(
 ) -> DeferredConsolidationMemory:
     torch.manual_seed(seed)
     model = DeferredConsolidationMemory(
-        candidates.shape[-1], memory_dim, provisional_ratio, keep_ratio, similarity
+        candidates.shape[-1], memory_dim, provisional_ratio, keep_ratio, similarity,
+        center_similarity, correction_bound,
     ).to(device)
     masks = torch.ones(candidates.shape[:2], dtype=torch.bool, device=device)
     encoder_similarity = (
@@ -146,12 +150,21 @@ def train_fold(
         if not bool(usable.any()):
             continue
         consolidated = model.consolidate(state, event[rows], similarity_for(rows))
-        loss = write_supervision_loss(
-            consolidated.consolidation_logits[usable],
-            teacher[rows][usable],
-            eligible[usable],
-            objective="bce",
-        )
+        if consolidation_objective == "listwise":
+            # Selecting k of n is a ranking problem, and a softmax over the
+            # eligible slots is invariant to the constant offset that a positive
+            # similarity residual would otherwise force the head to cancel.
+            scored = consolidated.consolidation_logits[usable].masked_fill(
+                ~eligible[usable], -torch.inf
+            )
+            loss = F.cross_entropy(scored, targets[rows][usable])
+        else:
+            loss = write_supervision_loss(
+                consolidated.consolidation_logits[usable],
+                teacher[rows][usable],
+                eligible[usable],
+                objective="bce",
+            )
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
         optimizer.step()
@@ -221,6 +234,14 @@ def main() -> None:
         choices=("none", "feature", "residual"),
         default="none",
         help="how the swept variants reach the frozen-encoder candidate/event similarity",
+    )
+    parser.add_argument(
+        "--consolidation-objective", choices=("bce", "listwise"), default="bce"
+    )
+    parser.add_argument("--no-center-similarity", action="store_true")
+    parser.add_argument(
+        "--correction-bound", type=float, default=0.0,
+        help="cap the consolidation head's contribution; 0 leaves it unbounded",
     )
     parser.add_argument(
         "--types",
@@ -328,6 +349,9 @@ def main() -> None:
                     provisional_ratio=provisional_ratio,
                     keep_ratio=args.keep_ratio,
                     similarity=similarity_mode,
+                    center_similarity=not args.no_center_similarity,
+                    correction_bound=args.correction_bound,
+                    consolidation_objective=args.consolidation_objective,
                     memory_dim=args.memory_dim,
                     write_steps=args.write_steps,
                     consolidation_steps=args.consolidation_steps,

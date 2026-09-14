@@ -288,6 +288,8 @@ class DeferredConsolidationMemory(nn.Module):
         provisional_ratio: float = 0.5,
         keep_ratio: float = 0.25,
         similarity: SimilarityMode = "none",
+        center_similarity: bool = True,
+        correction_bound: float = 0.0,
     ) -> None:
         super().__init__()
         if feature_dim < 1 or memory_dim < 1:
@@ -306,6 +308,13 @@ class DeferredConsolidationMemory(nn.Module):
         # 4*memory_dim+1 a scalar starts out negligible, which "residual" avoids
         # by scoring with it directly and letting the head learn a correction.
         self.similarity = similarity
+        self.center_similarity = center_similarity
+        # Write training reshapes candidate_projection around write-worthiness,
+        # and a consolidation head reading those traces learns a correction large
+        # enough to bury the similarity term: alone each stage is harmless, but
+        # together they cost 0.325 retention. A bounded correction keeps the
+        # similarity in charge and lets the head only adjust.
+        self.correction_bound = correction_bound
         self.candidate_projection = nn.Linear(feature_dim, memory_dim)
         self.event_projection = nn.Linear(feature_dim, memory_dim)
         self.recall_projection = nn.Linear(feature_dim, memory_dim)
@@ -366,8 +375,18 @@ class DeferredConsolidationMemory(nn.Module):
         if self.similarity == "feature":
             relation = torch.cat((relation, similarity[..., None]), dim=-1)
         logits = self.consolidation_head(relation).squeeze(-1)
+        if self.correction_bound > 0.0:
+            logits = self.correction_bound * torch.tanh(logits)
         if self.similarity == "residual":
-            logits = logits + self.similarity_scale * similarity
+            centred = similarity
+            if self.center_similarity:
+                # Encoder cosines are all positive, so an uncentred residual makes
+                # every candidate score high and forces the head to learn a large
+                # negative offset, which is where the ranking gets destroyed.
+                # Subtracting the per-episode mean is rank-preserving, so the
+                # untrained model is unchanged.
+                centred = similarity - similarity.mean(dim=-1, keepdim=True)
+            logits = logits + self.similarity_scale * centred
         ratio = self.keep_ratio / self.provisional_ratio
         selected, strengths = hard_top_k(logits, state.provisional, ratio)
         combined = state.strengths * strengths
