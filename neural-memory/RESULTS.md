@@ -2843,3 +2843,71 @@ construction — the k nearest turns are already present at the smallest load, s
 cannot change a top-k sum — and their values are identical from 2,000 onward. So against near clutter
 the filter's advantage is a constant +0.09 rather than a growing one; the growth in the earlier table
 belongs to the distant-clutter case.
+
+# Phase 43: the winning mechanism is worthless at the job it was built for
+
+Every number in this line, including Phase 42's, came from a paired comparison: two memories, one
+cue, which scores higher. A memory that simply receives data and lets old material surface has no
+such comparison. Items arrive, one number comes out, and a single global threshold decides whether
+anything is emitted. The fraction of arrivals worth emitting is small.
+
+The stream is the corpus in random order behind a sliding window. Positives and negatives are the
+same texts: each question fires once at a point where the turn answering it is inside the window, and
+many times at points where it is not. Base rate one percent.
+
+An earlier version used ordinary turns as the negatives and every score inverted — AUC 0.18 — because
+a conversational turn arriving beside its own neighbours is far more familiar than a short standalone
+question. That measured text genre, not memory. Matched, the result is this:
+
+| Window | Filter AUC | Max cosine AUC | Max cosine precision at best F1 |
+| ---: | ---: | ---: | ---: |
+| 200 | **0.5007** | 0.7093 | 0.2694 |
+| 1,000 | **0.4895** | 0.6078 | 0.1001 |
+| 4,000 | **0.4782** | 0.5277 | 0.0358 |
+| 8,000 | **0.4798** | 0.5221 | 0.0378 |
+
+**The filter is at chance at every window size.** The mechanism that beat every list reader at 25,000
+items cannot tell, at any scale, whether the answering turn is in the memory. To catch all of them,
+both readers need a threshold that admits about 97 false alarms per true positive.
+
+## Why, and what it means for the design
+
+The familiarity score is a sum over everything stored. Its absolute value is set by how many items
+are in the window and what they are, and that variation swamps the contribution of one item among
+even two hundred. A paired comparison holds all of it constant and isolates the one item, which is
+exactly why Phase 42 read 0.97 and this reads 0.48. Both are correct measurements of different
+quantities.
+
+Maximum cosine survives at small windows because a maximum is robust to what else is present — the
+right item can set a new one. It dies at large windows for the reason Phase 39 also found: with
+enough stored material something is always nearly as close as the thing you want.
+
+**A sum is the right statistic for a paired judgement and the wrong one for an absolute judgement.**
+The accumulation that made Phase 38 and Phase 42 work is the same property that makes the score
+incomparable across different memory contents. This is not a tuning problem; it is what the statistic
+is.
+
+## What this retracts and what it leaves
+
+It does not retract Phase 42. Paired, at 25,000 items, against near and distant clutter, the fixed
+size filter beats every list reader, and that stands as a statement about paired discrimination.
+
+It does retract the practical reading of it. A memory that receives data and surfaces things
+unprompted needs an absolute judgement, and on that the filter is worthless while a plain maximum is
+merely bad. Everything positive this line has found was measured in a setting the intended system
+does not have.
+
+## The obvious next thing, and why it is not done here
+
+The fix implied by the diagnosis is to remove the dependence on window content: score against a
+running estimate of what familiarity looks like for this memory right now, rather than against a fixed
+number. A z-score over recent arrivals costs nothing and is the standard move. Whether it recovers
+anything is untested, and it should be tested before any of this is built on.
+
+## Interpretation boundary
+
+Fifty-two questions, 33 of which could be placed in the stream, one encoder, three seeds. The
+positives are questions rather than ordinary turns, which is still not the intended cue — a real
+system is triggered by incoming conversation, not by a query — and the corpus carries no annotation
+of what *should* have surfaced for an ordinary turn. That label does not exist in any dataset here,
+and without it the intended task cannot be scored at all, only approximated as it is above.
