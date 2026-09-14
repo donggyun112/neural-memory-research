@@ -2543,3 +2543,80 @@ on the same pairs. At three seeds the best shape tied the baseline exactly, and 
 opened to a resolved 0.0093 — the tie was seed noise, and the seven-seed number is the one to quote.
 Nothing here rescues retrieval: this is a gate, a cheaper job than the one Phase 31 measured, and the
 content store is still beaten by cosine at that.
+
+# Phase 39: composition is real, and nobody here can reach it
+
+Phase 38 found accumulation across weak matches worth 0.095 on the gate. The obvious next question
+is whether it is worth anything on retrieval, which Phase 31 measured as picking one evidence
+session — a task with no composition in it. LongMemEval's multi-evidence questions have the
+structure instead: 126 of the 200 answerable questions need two or more sessions.
+
+## The structure exists, and it is large
+
+Ranking the *harder* evidence session with the easier one removed from the ranking:
+
+| Cue | Top-1 | Top-4 | Top-4, restricted to the 34 questions where it starts outside top-4 |
+| --- | ---: | ---: | ---: |
+| The question | 0.484 | 0.778 | **0.176** |
+| The easy evidence session | 0.627 | 0.873 | 0.618 |
+| Question plus easy evidence | **0.659** | **0.913** | **0.676** |
+
+On the questions where the second session is genuinely hard to find, expanding the cue with the
+first evidence session moves top-4 from 0.176 to 0.676. The session the question cannot reach is
+reachable through the session it can. This is the composition case, and it is not small.
+
+## Nobody can pick the hop
+
+Every reader returns the same number of sessions, so none can win by returning more. Recall of the
+full evidence set, five seeds, 126 questions:
+
+| Reader | State | @2 | @4 | @8 |
+| --- | --- | ---: | ---: | ---: |
+| Cosine, single shot | O(N) | 0.6853 | 0.8569 | 0.9142 |
+| Pseudo-relevance feedback | O(N) | 0.7197 | 0.8661 | 0.9210 |
+| PRF, blended over the top four | O(N) | 0.7171 | 0.8595 | 0.9306 |
+| PRF, gated on the top-1 margin | O(N) | 0.7204 | 0.8734 | 0.9194 |
+| **PRF with an oracle first hop** | O(N) | **0.8229** | **0.9376** | **0.9812** |
+| Delta-rule associative store | O(1) | 0.4581 | 0.6470 | 0.8123 |
+
+Paired differences at two slots: `prf_soft` minus cosine +0.0317 [+0.0040, +0.0595] resolved,
+`prf_gated` minus cosine +0.0351 [+0.0079, +0.0628] resolved, `prf_soft` minus plain `prf` -0.0026
+[-0.0364, +0.0317] not resolved.
+
+An oracle first hop buys +0.1376 at two slots. Every method that has to choose its own hop captures
+about +0.03 of that, and the two fixes aimed directly at the failure — blending the top four so a
+wrong hop is diluted, and expanding only when the top-1 stands clear of the runner-up — do not
+improve on taking the top-1 blindly. The cosine top-1 is an evidence session 82.5% of the time, so
+the loss is concentrated: a wrong hop costs far more than a right one gains, and none of the
+available signals separate the two.
+
+## The store loses a third time, by the same amount
+
+The hypothesis worth testing here was that Phase 31 measured the right mechanism on the wrong task.
+An associative read is a sum of stored values weighted by key similarity, so anything close to what
+the cue retrieves is pulled along — smearing, which is noise for a single target and might be
+spreading activation for a set. It is not. The store reads 0.4581 against cosine's 0.6853 at two
+slots, -0.2272 [-0.2695, -0.1840], and stays 0.10 to 0.23 behind at every k.
+
+That is the third independent regime, after retrieval (Phase 31) and in-place update (Phase 34), in
+which the delta-rule store loses by about 0.22 to a baseline that costs nothing.
+
+## What is actually blocked
+
+The shape of this result is Phase 19's. There, the write gate could not exceed about 0.54 because the
+information deciding what to keep does not exist at write time. Here, +0.1376 of recall sits behind a
+decision — which retrieved session to expand with — made at a moment when nothing available
+identifies the right one.
+
+The difference is that Phase 19 earned its claim by fitting an unconstrained model to bound what was
+extractable, and that has not been done here. Three hand-built selectors failing is not the same as
+no selector existing. **Whether a learned hop-selector can capture the oracle gap is the open
+question, and it is now the only live thread in this line.**
+
+## Interpretation boundary
+
+126 questions, one encoder, one corpus. The oracle first hop uses the corpus's own evidence
+annotation, so +0.1376 is the ceiling for a *single* expansion step and says nothing about what
+several would buy. The store was given untrained random projections, matching Phase 31's setting;
+training moved that measurement by +0.14 and closed none of a 0.26 gap, so it is not expected to
+close 0.22 here, but it was not run.
