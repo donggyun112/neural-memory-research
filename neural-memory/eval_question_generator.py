@@ -193,6 +193,15 @@ def main() -> None:
         results["memory"][f"win_rate_over_{name}"] = float(
             (memory_nll < torch.tensor(per_episode[name])).float().mean()
         )
+    # Answer NLL is heavy-tailed, so a mean difference can come from a handful of
+    # episodes while the generator has no per-episode preference at all. The
+    # paired form is what the conditions support: identical episodes throughout.
+    paired = torch.tensor(per_episode["random"]) - torch.tensor(per_episode["oracle"])
+    oracle_win_rate = float((paired > 0).float().mean())
+    results["oracle"]["win_rate_over_random"] = oracle_win_rate
+    results["oracle"]["paired_t_over_random"] = float(
+        paired.mean() / (paired.std(unbiased=True) / len(paired) ** 0.5)
+    )
 
     # The endpoint only says anything about a reader once the generator can be
     # shown to benefit from evidence handed to it directly. The weakest form of
@@ -208,6 +217,9 @@ def main() -> None:
         < results["no_memory"]["answer_nll"],
         "oracle_beats_random": results["oracle"]["answer_nll"] < results["random"]["answer_nll"],
         "any_evidence_beats_no_memory": best_evidence < results["no_memory"]["answer_nll"],
+        # A mean that passes while the win rate sits at chance means the gate was
+        # reading outliers, not a preference for the evidence.
+        "oracle_beats_random_per_episode": oracle_win_rate > 0.5,
     }
     output = {
         "validity": validity,

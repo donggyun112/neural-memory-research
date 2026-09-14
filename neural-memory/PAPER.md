@@ -2,9 +2,14 @@
 
 ## Status
 
-Working preprint and reproducibility plan, 2026-09-14. The evidence supports two phenomenon claims
-and one substantial negative result; it does not support a general solution to autonomous memory.
-All negative branches and controls are retained in `RESULTS.md`, which is the authoritative ledger.
+Working preprint and reproducibility plan, 2026-09-14. The evidence supports one phenomenon claim and
+two substantial negative results; it does not support a general solution to autonomous memory. All
+negative branches and controls are retained in `RESULTS.md`, which is the authoritative ledger.
+
+Two claims were withdrawn on measurement rather than reasoning, and both retractions are load-bearing:
+the public retention claim fell to a length control (Phase 15), and the task-level generator result
+fell to a paired test (Phase 33). Anything quoted from this project should be checked against the
+phase that last touched it.
 
 The project ran in two tracks. Track A asked whether a small layer can decide *what to keep* before
 the query exists. Track B abandoned that framing and asked whether the network itself, as an
@@ -47,11 +52,13 @@ Phase 16 established that this private margin is semantic rather than a length c
 length-only write arm reaches 0.4056 +/- 0.0128 against 0.5920 +/- 0.0099 for the frozen embedding,
 and making length explicit alongside the embedding does not improve it.
 
-A gated frozen-generator endpoint supplied task-level evidence for this track. Scoring the gold
-answer with a frozen `Qwen/Qwen2.5-1.5B-Instruct`, the layer reaches 2.1508 answer NLL against an
-oracle 2.2135 and a no-memory 2.7587 on the 29 of 72 episodes where its write succeeded; on the 43
-where it failed the injected memory is near-inert at 2.9195 against 2.9593 while the oracle still
-reaches 2.3937. The whole task-level shortfall is write selection, not recall.
+A gated frozen-generator endpoint appeared to supply task-level evidence for this track, and **Phase
+33 withdrew it**. The gate compared means of a heavy-tailed quantity over a 72-episode prefix. On the
+full 202 held-out episodes it fails — a random pair of sessions beats the annotated evidence — and
+even on the original 72 the oracle is better than random on exactly 50.0% of episodes, paired
+t = 1.74. The endpoint was never detecting the evidence session. `instrument_usable` now requires a
+paired win rate above chance, and no answer-likelihood number from this project should be quoted
+until an instrument passes it.
 
 ### Where Track A stopped, and why
 
@@ -154,10 +161,14 @@ Required controls, applied throughout:
 - shuffled later query; held-out project or question groups; at least five initialization seeds.
 
 The frozen-generator endpoint carries a validity gate (`instrument_usable`): the oracle must beat
-both no-memory and random, and its prompts must be untruncated. Two runs in Phase 31 failed that
-gate and were not interpreted — correctly, since the deferred episode construction excludes the
-second evidence session from the candidate pool, so no reader selecting from that pool can supply a
-complete fact.
+both no-memory and random, its prompts must be untruncated, and — added in Phase 33 — it must beat
+random *per episode*, not only in the mean. Every run of this endpoint has now failed that gate.
+Deferred episodes fail because their construction excludes the second evidence session from the
+candidate pool, so no reader selecting from that pool can supply a complete fact; revisit episodes
+fail because the generator has no per-episode preference for the evidence session at all.
+
+There is therefore **no working task-level endpoint in this project**. The mechanistic endpoint —
+whether the evidence session is surfaced — carries every claim made here.
 
 ## Datasets
 

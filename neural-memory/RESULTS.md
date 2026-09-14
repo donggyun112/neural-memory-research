@@ -909,6 +909,12 @@ cap retained about a tenth of the text the oracle condition exists to supply. Co
 writer at two-of-eight capacity, and the first 72 held-out LongMemEval-S episodes that carry a gold
 answer.
 
+> **Correction, Phase 33.** The gate that passed here is a comparison of means over a heavy-tailed
+> quantity, read on a 72-episode prefix. Re-measured on the full 202 held-out episodes it fails, and
+> even on these 72 the oracle is better than random on exactly 50.0% of episodes (paired t = 1.74).
+> The instrument never had a per-episode preference for the evidence session. The task-level claim
+> below is withdrawn; see Phase 33.
+
 | Condition | Answer NLL | Gain over no memory | Evidence present | Prompt truncated |
 | --- | ---: | ---: | ---: | ---: |
 | **Oracle two slots** | **2.3211** | **+0.5574** | 1.000 | 0.00 |
@@ -2290,3 +2296,84 @@ Untrained random projections, sparse codes of width 32, and the same delta-rule 
 the comparison against that phase is clean. What transplants from Phase 30 is the decay constant
 alone; the capture rate would need the trained parameterisation to be carried over honestly, which
 would mean re-running this measurement inside `TrainableMemory` rather than beside it.
+
+# Phase 33: the generator endpoint never worked, and the gate said so late
+
+Phase 31 needed the answer-likelihood endpoint to close the loop from retrieval to the task, and it
+failed its validity gate twice. The first failure was mine: deferred episodes split the evidence
+across two sessions and place only the first in the candidate pool, so no reader selecting from that
+pool can supply a complete fact. `evidence_and_consolidation` beats no-memory by 0.0604 while
+`evidence_only` is the worst condition measured at -0.7161 — half a fact is actively harmful, and it
+is the shortest memory prompt, so that is not a length effect.
+
+Moving to revisit episodes removes that defect: evidence is complete in one session, and this is the
+corpus and the instrument Phase 15 validated. On 202 held-out episodes, every memory condition now
+beats no-memory, and the gate still fails:
+
+| Condition | Answer NLL | Gain over no memory | Evidence present |
+| --- | ---: | ---: | ---: |
+| Random two slots | **2.7629** | +0.1793 | 0.282 |
+| Oracle two slots | 2.7849 | +0.1573 | 1.000 |
+| Cosine two slots | 2.8321 | +0.1101 | 0.941 |
+| Recency two slots | 2.8659 | +0.0763 | 0.228 |
+| Store two slots | 2.8821 | +0.0601 | 0.886 |
+| Evidence session alone | 2.9287 | +0.0136 | 1.000 |
+| No memory | 2.9422 | 0.0000 | 0.000 |
+
+A random pair of sessions beats the annotated evidence. Two explanations were checked and neither
+holds: prompts are truncated in 1% of episodes, not enough to matter, and the raw episodes align with
+the feature rows exactly — 688/688 train, 202/202 eval, 300/300 deferred target offsets agree, so the
+oracle really is receiving the evidence session.
+
+## Why Phase 15 passed
+
+The same script reproduces Phase 15 on the same prefix. Reading the identical per-episode scores over
+growing prefixes of the held-out split:
+
+| Episodes | Oracle | Random | No memory | Gate |
+| ---: | ---: | ---: | ---: | --- |
+| 36 | 2.3230 | 2.5560 | 3.1268 | passes |
+| 72 | 2.3188 | 2.5001 | 2.8785 | passes |
+| 101 | 2.3018 | 2.3945 | 2.8152 | passes |
+| 144 | 2.5974 | 2.6070 | 2.8347 | passes |
+| **202** | **2.7849** | **2.7629** | 2.9422 | **fails** |
+
+Phase 15 reported oracle 2.3211, random 2.5467 and no-memory 2.8785 on the first 72; this run gives
+2.3188, 2.5001 and 2.8785 on the same episodes. The instrument is the same, the corpus is the same,
+and the difference is only how many episodes the gate was read over.
+
+## What the gate was actually measuring
+
+The paired form settles it, and it is available at every prefix:
+
+| Episodes | Oracle minus random | Oracle better on | Paired t |
+| ---: | ---: | ---: | ---: |
+| 72 | +0.1813 | **0.500** | +1.74 |
+| 202 | -0.0220 | 0.391 | -0.25 |
+
+At the prefix where Phase 15 declared the instrument usable, the oracle is better than random on
+exactly half of the episodes. The mean difference came from the tail, not from a preference. Answer
+NLL is heavy-tailed, a mean-based gate cannot see that, and the endpoint was never detecting the
+evidence session — it was detecting a few episodes where a long prompt happened to help.
+
+`instrument_usable` now also requires the paired win rate to exceed chance.
+
+## What this retracts
+
+Phase 15's positive task-level result is withdrawn: "a correct capacity decision buys essentially the
+full oracle gain on a frozen generator" rests on a gate that a paired test does not support. The
+subset split that produced it — 2.1508 learned against 2.2135 oracle on 29 episodes — is a mean over
+twenty-nine heavy-tailed values and cannot carry that weight.
+
+This leaves the project with no working task-level endpoint. What survives is the mechanistic
+measurement: whether the evidence session is surfaced at all, which is where Phase 31's answer lives
+and which does not depend on a generator's likelihood at all.
+
+## Interpretation boundary
+
+One generator, one seed, two-of-eight capacity. The finding is not that frozen generators cannot be
+used as instruments; it is that this one, on these episodes, does not prefer the annotated evidence
+per episode, and that a gate comparing means was unable to report that. A generator with a longer
+usable context, or a corpus whose evidence is shorter relative to the window, might behave
+differently — but that has to be demonstrated before any answer-likelihood number from this project
+is quoted.
