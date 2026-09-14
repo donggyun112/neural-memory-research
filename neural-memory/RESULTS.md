@@ -2911,3 +2911,71 @@ positives are questions rather than ordinary turns, which is still not the inten
 system is triggered by incoming conversation, not by a query — and the corpus carries no annotation
 of what *should* have surfaced for an ordinary turn. That label does not exist in any dataset here,
 and without it the intended task cannot be scored at all, only approximated as it is above.
+
+# Phase 44: the answer key was in the data the whole time
+
+Every evaluation in this project has depended on a human annotation — which session holds the answer,
+which question is unanswerable — and there are 52 of them. That is why Phase 43 could only
+approximate the task it wanted to measure, and why Phase 33 could retract a whole endpoint on the
+strength of 72 episodes.
+
+Deep learning did not scale on annotations. It scaled on targets the data manufactures for itself,
+one per position, and a memory has the same thing available: at time t what should surface is
+whatever turns out to matter at t+1, and the stream says what that was. No labelling, a target at
+every position, and continuous rather than a binary "should fire".
+
+Using it forces one correction. Phase 43 shuffled the stream, which destroys the only structure this
+objective runs on — in a random order nothing predicts anything. Turns are streamed here in their
+true order.
+
+At each scored position the memory holds every earlier turn, each reader surfaces one of them, and
+the surfaced item then has to pick the real future out of a hundred candidate futures drawn from
+elsewhere in the corpus. 2,080 positions, horizon five turns, three seeds:
+
+| Reader | Top-1 | Top-10 | **Top-1, positions needing something old** |
+| --- | ---: | ---: | ---: |
+| Random | 0.0210 | 0.1152 | 0.0076 |
+| Recency | 0.5580 | 0.7530 | 0.1606 |
+| **Association (cosine to the current turn)** | 0.5564 | 0.7915 | **0.2145** |
+| Oracle, the best item actually in memory | 0.6641 | 0.9149 | 0.3476 |
+
+Over all positions association and recency are indistinguishable, 0.5564 against 0.5580, which is
+what a conversation should look like: the near future is mostly the present topic and the last turn
+already carries it.
+
+The interesting positions separate themselves without any annotation. Where even the oracle's best
+item sits far back, recency has nothing to offer and association does:
+
+| "Old" means at least | Association minus recency | 95% interval | Headroom to the oracle |
+| ---: | ---: | --- | ---: |
+| 16 turns | +0.0563 | [+0.0330, +0.0811] | +0.1343 |
+| 64 turns | +0.0634 | [+0.0336, +0.0933] | +0.1331 |
+| 128 turns | +0.0772 | [+0.0415, +0.1128] | +0.1369 |
+
+All resolved, and the advantage grows the further back the useful item is. The headroom is stable at
+about 0.134 whichever cutoff is used — more than double the gain association already captures.
+
+## Why this is different from everything before it
+
+Phase 19 measured the headroom above the learned write gate at 0.0149 and concluded, correctly, that
+further work on it was unjustified. Phase 31 found the store below its own baseline. Every positive
+result since has either been a proxy (Phase 30), a paired comparison the intended system cannot make
+(Phases 38, 42), or a mechanism at chance where it matters (Phase 43).
+
+This is the first measurement in the project with both properties a learnable problem needs: a target
+that exists at every position rather than at fifty-two of them, and a gap between the simple
+heuristic and the ceiling — 0.2145 against 0.3476 — large enough to be worth closing.
+
+It also says what the memory is for, in a way no annotation did. Association earns nothing on the
+bulk of a conversation, where recency is already right. It earns its keep precisely on the positions
+where the future returns to something old, those positions are a fifth of the stream, and they can be
+found without anyone labelling them.
+
+## Interpretation boundary
+
+The target is a five-turn future centroid, which is a proxy for usefulness and not usefulness itself:
+a memory that predicts what gets said next is not necessarily a memory that helps. The foils come
+from the same corpus, so the hundred-way choice is easier than an open one. "Old" is defined by where
+the oracle's pick sits, which is a property of this encoder's geometry rather than of the
+conversation. And nothing is trained here — association is plain cosine, and whether a learned reader
+captures any of the 0.134 is exactly the open question this makes askable.
