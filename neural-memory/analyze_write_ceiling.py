@@ -62,26 +62,43 @@ def main() -> None:
     args = parser.parse_args()
 
     payload = torch.load(args.features, map_location="cpu", weights_only=True)
-    names = payload["question_type_names"]
-    wanted = [name.strip() for name in args.types.split(",") if name.strip()]
-    keep_rows = torch.zeros(len(payload["targets"]), dtype=torch.bool)
-    for name in wanted:
-        keep_rows |= payload["question_type"] == names.index(name)
-    candidates = payload["candidates"][keep_rows]
-    targets = payload["targets"][keep_rows]
-    lengths = payload["lengths"][keep_rows]
-    types = payload["question_type"][keep_rows]
+    if "train_candidates" in payload:
+        # Global-feedback artifacts carry their own held-out-project split and no
+        # candidate lengths, so folds and the length reference do not apply.
+        candidates = torch.cat((payload["train_candidates"], payload["eval_candidates"]))
+        targets = torch.cat((payload["train_targets"], payload["eval_targets"]))
+        held_out = torch.zeros(len(targets), dtype=torch.bool)
+        held_out[len(payload["train_targets"]) :] = True
+        assignment = held_out.long()
+        folds = [1]
+        lengths = None
+    else:
+        names = payload["question_type_names"]
+        wanted = [name.strip() for name in args.types.split(",") if name.strip()]
+        keep_rows = torch.zeros(len(payload["targets"]), dtype=torch.bool)
+        for name in wanted:
+            keep_rows |= payload["question_type"] == names.index(name)
+        candidates = payload["candidates"][keep_rows]
+        targets = payload["targets"][keep_rows]
+        lengths = payload["lengths"][keep_rows]
+        assignment = stratified_folds(payload["question_type"][keep_rows], args.folds)
+        folds = list(range(args.folds))
 
     episodes, traces, _ = candidates.shape
     gold = targets[:, None]
-    longest = float((lengths.topk(args.keep, dim=1).indices == gold).any(dim=1).float().mean())
-    assignment = stratified_folds(types, args.folds)
+    longest = (
+        float((lengths.topk(args.keep, dim=1).indices == gold).any(dim=1).float().mean())
+        if lengths is not None
+        else None
+    )
 
     rows: list[float] = []
     for seed in (int(value) for value in args.seeds.split(",")):
         kept = torch.zeros(episodes, dtype=torch.bool)
-        for fold in range(args.folds):
+        scored = torch.zeros(episodes, dtype=torch.bool)
+        for fold in folds:
             evaluate = assignment == fold
+            scored |= evaluate
             model = train_scorer(
                 candidates[~evaluate],
                 targets[~evaluate],
@@ -96,10 +113,11 @@ def main() -> None:
                 scores = model(candidates[evaluate]).squeeze(-1)
             chosen = scores.topk(args.keep, dim=1).indices
             kept[evaluate] = (chosen == targets[evaluate][:, None]).any(dim=1)
-        rows.append(float(kept.float().mean()))
+        rows.append(float(kept[scored].float().mean()))
 
     output = {
         "episodes": episodes,
+        "scored_episodes": int(scored.sum()),
         "traces": traces,
         "keep": args.keep,
         "parameters": (candidates.shape[-1] + 1) * args.hidden + args.hidden + 1,

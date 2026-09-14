@@ -1298,3 +1298,64 @@ It also does not rescue the Phase 17 premise. The write-time discard still costs
 event is still as informative as the query, and the corpus still has no deferral window. What changed
 is that the learned layer now matches and slightly exceeds a training-free rule with the same inputs,
 which it previously could not do.
+
+# Phase 19: the write gate is information-limited
+
+Date: 2026-09-14
+
+Phase 18 returned the binding constraint to stage one, so the obvious next move is to improve it.
+Two attempts and one measurement establish that there is almost nothing to improve.
+
+Scoring each candidate against the episode mean rather than in isolation is the comparative form that
+fixed consolidation, since choosing k of n is a comparison and a per-candidate gate cannot express
+"more promising than the rest of this episode". It helps slightly, moving two-of-eight retention from
+0.5278 +/- 0.0136 to 0.5380 +/- 0.0126, about one standard deviation.
+
+Giving the write gate a length prior in the residual form that worked for consolidation was not
+attempted, for a reason worth recording: the prior is worse than what the gate already learns. The
+longest-two rule retains 0.5175 against the gate's 0.5278, so initialising at the prior would start
+below the current solution rather than above it, which is the opposite of the consolidation case
+where cosine sat at 0.9342 against a learned 0.6491.
+
+## How much write-time signal exists
+
+`analyze_write_ceiling.py` fits an unconstrained listwise scorer directly on the raw
+384-dimensional encoder features under the same teacher, folds, and capacity. It has no memory
+bottleneck, no projection to 64 dimensions, and no staged freezing, so it bounds what any model
+could extract from a candidate's own content at write time.
+
+| Model | LongMemEval deferred, 228 episodes | Claude revisit, 574 held-out episodes |
+| --- | ---: | ---: |
+| Random capacity | 0.2500 | 0.2500 |
+| Longest two | 0.5175 | 0.3868 |
+| Unconstrained scorer, 98,817 parameters | 0.5044 | **0.6069** |
+| Unconstrained scorer, 197,633 parameters, 3x steps | 0.4971 | not run |
+| **Learned write gate** | **0.5380** | 0.5920 |
+
+On the deferred corpus no unconstrained model beats the 64-dimensional gate, and tripling capacity
+and training makes it worse rather than better, which on 228 episodes is overfitting. On the Claude
+corpus the unconstrained scorer is ahead by 0.0149, so a little headroom exists there, but not the
+kind that a better architecture would obviously capture.
+
+The write decision is therefore information-limited rather than capacity-limited. This reproduces
+Phase 7's finding — 0.543 balanced accuracy from observation-time evidence — from a different angle,
+under a different teacher, on two different corpora.
+
+## Why this matters for the design
+
+The same layer that cannot exceed about 0.54 at write time reaches 0.9500 once the later event
+arrives. That gap is not a modelling result, it is a statement about when the information exists.
+Every phase from 12 onward spent effort making the write moment smarter; the measurement says that
+effort had a ceiling of roughly 0.015 and the project reached it.
+
+What follows is a design conclusion rather than a new experiment: a bounded memory should hold
+provisionally and consolidate against later evidence, not attempt to be selective at encoding time.
+That is what `RESEARCH.md` found three biological mechanisms converging on, and it is now measured on
+two corpora here.
+
+## Interpretation boundary
+
+The ceiling is measured under one teacher and one frozen encoder. A different notion of usefulness,
+or a representation carrying information BGE-small discards, could move it. The claim is not that
+write-time prediction is impossible in general, only that on these corpora with this supervision the
+gate has extracted what is available, so further architecture work on stage one is unjustified.
