@@ -2,15 +2,23 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
+import time
 from pathlib import Path
 
 import torch
 from torch import Tensor
 from torch.nn import functional as F
 
-from eval_question_retrieval import cosine_scores, memory_scores, with_distractors
+from eval_question_retrieval import (
+    cosine_scores,
+    load_episodes,
+    memory_scores,
+    split_episodes,
+    with_distractors,
+)
 from neural_memory.generator_probe import build_memory_prompt, score_answer_nll
-from neural_memory.longmemeval import iter_longmemeval_deferred
+from neural_memory.longmemeval import iter_longmemeval_deferred, iter_longmemeval_revisits
 from neural_memory.trainable import TrainableMemory
 
 
@@ -44,13 +52,21 @@ def main() -> None:
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
-    payload = torch.load(args.features, map_location="cpu", weights_only=True)
-    candidates = F.normalize(payload["candidates"], dim=-1)
-    queries = F.normalize(payload["query"], dim=-1)
-    targets = payload["targets"].long()
+    candidates, queries, targets, train_count = load_episodes(args.features)
     episodes, traces, features = candidates.shape
 
-    examples = list(iter_longmemeval_deferred(args.input, candidates=traces))
+    if train_count is None:
+        examples = list(iter_longmemeval_deferred(args.input, candidates=traces))
+    else:
+        # The revisit artifact groups its rows by split, so the raw episodes have
+        # to be regrouped the same way before they line up with the features.
+        raw = list(iter_longmemeval_revisits(args.input, candidates=traces))
+        examples = [row for row in raw if row.split == "train"]
+        examples += [row for row in raw if row.split == "eval"]
+        if len(examples) - len(
+            [row for row in raw if row.split == "train"]
+        ) != episodes - train_count:
+            raise RuntimeError("the artifact's split sizes do not match the raw episodes")
     if len(examples) != episodes:
         raise RuntimeError(
             f"raw episodes ({len(examples)}) do not align with the feature artifact "
@@ -59,9 +75,7 @@ def main() -> None:
 
     torch.manual_seed(args.seed)
     generator = torch.Generator().manual_seed(args.seed)
-    order = torch.randperm(episodes, generator=generator)
-    cut = int(episodes * (1.0 - args.holdout))
-    train_index, eval_index = order[:cut], order[cut:]
+    train_index, eval_index = split_episodes(episodes, train_count, args.holdout, generator)
     loaded = with_distractors(candidates, 0, generator)
 
     model = TrainableMemory(
@@ -100,7 +114,26 @@ def main() -> None:
             sorted({int(target), *[slot for slot in picks if slot != int(target)][: args.keep - 1]})
             for target in held_targets
         ],
+        # A deferred episode's answer is spread over two evidence sessions and
+        # only the first is a candidate, so the oracle above may be handing the
+        # generator half a fact. These two say whether that is what breaks it.
+        "evidence_only": [[int(target)] for target in held_targets],
     }
+    sessions = {
+        name: [
+            [examples[int(index)].candidates[slot] for slot in slots]
+            for index, slots in zip(held, selections, strict=True)
+        ]
+        for name, selections in conditions.items()
+    }
+    if train_count is None:
+        # Only the deferred episodes hold a second evidence session outside the
+        # candidate pool; a revisit episode's evidence is complete in one slot.
+        sessions["evidence_and_consolidation"] = [
+            [examples[int(index)].candidates[int(target)], examples[int(index)].consolidation]
+            for index, target in zip(held, held_targets, strict=True)
+        ]
+        conditions["evidence_and_consolidation"] = [[int(target)] for target in held_targets]
 
     answers = [examples[int(index)].answer for index in held]
     if not all(answer.strip() for answer in answers):
@@ -108,14 +141,20 @@ def main() -> None:
 
     results: dict[str, dict[str, float]] = {}
     per_episode: dict[str, list[float]] = {}
-    for name, selections in conditions.items():
+    started = time.monotonic()
+    for order, (name, selections) in enumerate(conditions.items(), start=1):
+        print(
+            f"[{time.monotonic() - started:7.1f}s] scoring {order}/{len(conditions)}: {name}",
+            file=sys.stderr,
+            flush=True,
+        )
         prompts = [
             build_memory_prompt(
-                [examples[int(index)].candidates[slot] for slot in slots],
+                texts,
                 examples[int(index)].question,
                 max_session_chars=args.max_session_chars,
             )
-            for index, slots in zip(held, selections, strict=True)
+            for index, texts in zip(held, sessions[name], strict=True)
         ]
         scores, truncated = score_answer_nll(
             prompts,
@@ -155,11 +194,20 @@ def main() -> None:
             (memory_nll < torch.tensor(per_episode[name])).float().mean()
         )
 
+    # The endpoint only says anything about a reader once the generator can be
+    # shown to benefit from evidence handed to it directly. The weakest form of
+    # that is the whole annotated evidence set, alone, against an empty prompt.
+    best_evidence = min(
+        results[name]["answer_nll"]
+        for name in ("oracle", "evidence_only", "evidence_and_consolidation")
+        if name in results
+    )
     validity = {
         "oracle_prompts_intact": results["oracle"]["truncated_prompt_rate"] == 0.0,
         "oracle_beats_no_memory": results["oracle"]["answer_nll"]
         < results["no_memory"]["answer_nll"],
         "oracle_beats_random": results["oracle"]["answer_nll"] < results["random"]["answer_nll"],
+        "any_evidence_beats_no_memory": best_evidence < results["no_memory"]["answer_nll"],
     }
     output = {
         "validity": validity,

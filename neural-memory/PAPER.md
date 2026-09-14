@@ -1,188 +1,229 @@
-# Can a Small Independent Memory Layer Learn What to Store Before the Query?
+# What a Bounded Memory Layer Can and Cannot Do Before the Query Arrives
 
 ## Status
 
-Working preprint and reproducibility plan, 2026-09-13. The present evidence supports a
-phenomenon claim, not a general solution to autonomous memory. All negative branches and controls
-are retained in `RESULTS.md`.
+Working preprint and reproducibility plan, 2026-09-14. The evidence supports two phenomenon claims
+and one substantial negative result; it does not support a general solution to autonomous memory.
+All negative branches and controls are retained in `RESULTS.md`, which is the authoritative ledger.
 
-## Research question
+The project ran in two tracks. Track A asked whether a small layer can decide *what to keep* before
+the query exists. Track B abandoned that framing and asked whether the network itself, as an
+associative store, can *be* the memory. Both tracks reached a measured limit, and the limits are
+different. Readers should not carry a Track A result into a Track B claim.
 
-Can a small trainable layer attached to a frozen language encoder decide, from the current input
-alone, which information should occupy a bounded memory, update that memory state, and later
-activate the relevant state from an ordinary future utterance without an explicit search command?
+## Track A: query-hidden capacity selection
 
-This is deliberately different from asking whether vector search can retrieve a relevant passage.
+### Research question
+
+Can a small trainable layer attached to a frozen encoder decide, from the current input alone, which
+information should occupy a bounded memory, and later activate the relevant state from an ordinary
+future utterance without an explicit search command?
+
 The decisive event was assumed to occur before the future query exists: the layer must discard most
 candidates and cannot recover a discarded trace later.
 
 **Phase 17 measured that assumption and it is wrong.** Sweeping the provisional capacity from an
 immediate two-of-eight commitment to holding all eight until a later event arrives moves retention
-from 0.5281 to 0.6456, so removing the irreversibility entirely is worth about 0.035 to 0.118
-depending on the arm. Over the same span, ranking those candidates by raw cosine to the same event
-reaches 0.9342. The dominant cost is the learned selection mechanism, not the irreversible discard,
-and the research question above should be read as being about that mechanism.
+from 0.5281 to 0.6456. Over the same span, ranking those candidates by raw cosine to the same event
+reaches 0.9342. The dominant cost is the learned selection mechanism, not the irreversible discard.
 
-## Model under test
+### Model under test
 
-The frozen encoder maps text to semantic features. `SelectiveWriteRecallMemory` is an independent
-106,946-parameter layer with three learned operations:
+`SelectiveWriteRecallMemory`, an independent 106,946-parameter layer over a frozen encoder, with
+three learned operations: a hard capacity decision taken without the future query, a projection of
+survivors into persistent 64-dimensional traces, and a recall step driven by an ordinary later
+utterance. No graph traversal, database search, prompt-level memory instruction, or backbone
+fine-tuning.
 
-1. **Write:** score each current candidate without the future query and execute a hard capacity
-   decision.
-2. **State update:** project selected candidates into persistent 64-dimensional traces; discarded
-   traces are absent from the later state.
-3. **Recall:** use an ordinary later utterance to activate a surviving trace.
+### What Track A established
 
-There is no Keymem integration, graph traversal, database search, prompt-level memory instruction,
-or LLM fine-tuning in this experiment.
+On the natural Claude corpus at two-of-eight capacity the staged model retains the future-relevant
+turn in 0.5906 +/- 0.0121 of held-out-project episodes against a 0.25 random-capacity expectation,
+with recall top-1 0.5627 +/- 0.0164 falling to 0.3369 +/- 0.0050 under a shuffled query. Conditional
+on survival, top-1 is about 0.9527. Causal position, novelty and prediction-surprise features raise
+five-seed retention to 0.6279 +/- 0.0097, reproduced on CPU at 0.6195 +/- 0.0101.
 
-## Training curriculum
+Phase 16 established that this private margin is semantic rather than a length correlate: a
+length-only write arm reaches 0.4056 +/- 0.0128 against 0.5920 +/- 0.0099 for the frozen embedding,
+and making length explicit alongside the embedding does not improve it.
 
-Pure delayed end-to-end credit did not teach the hard write decision. The current curriculum is:
+A gated frozen-generator endpoint supplied task-level evidence for this track. Scoring the gold
+answer with a frozen `Qwen/Qwen2.5-1.5B-Instruct`, the layer reaches 2.1508 answer NLL against an
+oracle 2.2135 and a no-memory 2.7587 on the 29 of 72 episodes where its write succeeded; on the 43
+where it failed the injected memory is near-inert at 2.9195 against 2.9593 while the oracle still
+reaches 2.3937. The whole task-level shortfall is write selection, not recall.
 
-1. imitate a weak write teacher;
-2. freeze the writer and train recall from the later event;
-3. optionally unfreeze both operations for low-rate joint optimization while retaining a teacher
-   regularizer.
+### Where Track A stopped, and why
 
-The current ablation compares independent BCE and listwise ranking supervision. A second ablation
-adds three online-only signals available at write time: normalized position, novelty against earlier
-traces, and prediction surprise against an exponential moving summary. This surprise is an embedding
-proxy, not the gradient-based surprise defined by Titans.
+Phase 15 withdrew the external claim: on LongMemEval-S the training-free longest-two rule retains
+0.4159 against a learned 0.4069, so the public benchmark cannot distinguish this layer from a length
+heuristic. Phase 19 then measured the ceiling directly. An unconstrained listwise scorer on the raw
+384-dimensional features, with no bottleneck and no staged freezing, reaches 0.5044 on the deferred
+corpus against the gate's 0.5380, and 0.6069 against 0.5920 on Claude.
+
+The write decision is **information-limited, not capacity-limited**. The same layer that cannot
+exceed about 0.54 at write time reaches 0.9500 once the later event arrives. Further architecture
+work on stage one is unjustified, which is what ended this track.
+
+## Track B: the store itself as the memory
+
+### Redesign
+
+Track A kept treating memory as a selection problem over slots. Track B rebuilt the question: the
+network *is* the memory. `RESEARCH.md` records ten numbered measurements drawn from the biological
+literature — sparse expanded coding in the mushroom body, synaptic tagging and capture, opponent
+modulatory channels from the fly DAN/MBON circuit, parallel stores with different time constants,
+competitive allocation, replay and reconsolidation — each naming its source finding and its
+falsification criterion before it was run.
+
+The store is delta-rule associative: `W <- λW + s·(v − W k)kᵀ`, with keys formed by a sparse expanded
+code and values read back by comparison against what was stored.
+
+### What Track B established (Phases 20–30)
+
+Six of the ten predictions survived, three were rejected, one split. The rejections cluster: three of
+them are explained by the error-correcting write rule alone, which is a single mechanism rather than
+three independent failures.
+
+The surviving results, all on held-out discrimination — whether a read returns its own value ahead of
+every other stored value:
+
+- Sparse expanded coding raises discrimination, and the advantage is 30–60x larger for *similar*
+  documents, as the sparsening literature predicts. Measured on fidelity the effect appears
+  reversed; discrimination is the quantity the prediction is about.
+- Decay does not help. Established three independent ways: a sweep of constants (Phase 21), a
+  genuine per-unit adaptive rule (Phase 27), and gradient descent driving both decay constants to
+  0.9995 and 0.9964 without being told (Phase 30).
+- Training the assembled store lifts held-out discrimination from 0.8774 to 0.9513.
+
+Phase 30 also overturned Phase 29's own hand ablation. The ablation measured the tag pathway at
+0.0007 and found the parallel store harmful; restored as trainable quantities, every constant moved
+*up* and none switched off, with capture going from a hand-set 0.25 to 0.9445. A hand ablation
+answers whether a component helps *at the setting it was given*, and cannot separate a dead component
+from one configured shut.
+
+### Track B's negative result
+
+**Discrimination is a proxy, and it does not transfer.** Phase 31 gave the store the task the
+benchmark actually asks: store a question's candidate sessions, probe with the question embedding —
+a cue that was never written — and return the evidence session.
+
+| Reader | LongMemEval deferred | LongMemEval revisit |
+| --- | ---: | ---: |
+| Chance | 0.1250 | 0.1250 |
+| Trained store | 0.5578 +/- 0.0347 | 0.6337 +/- 0.0200 |
+| Trained key projection, nothing written | 0.8178 +/- 0.0401 | 0.8416 +/- 0.0245 |
+| **Cosine on the frozen encoder** | **0.8622 +/- 0.0295** | **0.8465** |
+
+Writing the sessions down *costs* about 0.21–0.26 against reading them with the very projection the
+store was trained to use. Three defences were tested and none survived:
+
+- **Undertraining.** Twelve thousand steps gives 0.5741 +/- 0.0105, not materially different from
+  three thousand.
+- **Sparsity.** A question's code already shares half its active units with the evidence session's at
+  width 8, and at width 512 the code is dense with total overlap by construction — the store still
+  reads 0.63 against cosine's 0.86. Widening the value bottleneck peaks at 0.7074.
+- **Load.** Padding each question's candidate set with sessions from other questions widens the gap
+  rather than closing it: 0.16 behind at eight sessions, 0.35 behind at a hundred and twenty-eight.
+
+The mechanism is legible. A delta-rule store is fitted to satisfy one equation per document — stored
+key returns stored value — and sparsening makes those equations more nearly independent. That is why
+every Track B measurement that improved discrimination did so, and why Phase 30's constants all ran
+toward preserving what was written. None of it produces generalisation from a cue that was never
+written, and the retrieval the benchmark asks for already lives in the encoder's geometry.
+
+This does not retract the Track B measurements. They were about the store's ability to hold what it
+was given, and they stand. What does not follow — and what the project assumed for twelve phases — is
+that a store which holds documents well is a store that answers questions well.
 
 ## Evaluation design
 
-The primary outcome is not generated-answer quality. It is whether the future-relevant item survives
-the earlier capacity bottleneck and is then activated by the correct later context.
+The primary Track A outcome is whether the future-relevant item survives the capacity bottleneck and
+is then activated by the correct later context; the primary Track B outcome is hit rate on the real
+question against the frozen encoder it reads from. Answer quality is a gated secondary endpoint in
+both.
 
-Primary metrics:
+Required controls, applied throughout:
 
-- target retention at 25% and 75% memory capacity;
-- write balanced accuracy;
-- recall top-1, top-2, and mean reciprocal rank;
-- correct-query minus shuffled-query top-1;
-- position-macro retention and top-1 to remove recency-distribution advantages.
+- random capacity, untrained model, and randomly permuted write teacher;
+- recency, causal novelty, causal surprise, and **length** heuristics;
+- full frozen-embedding cosine with the query visible — in Track B this is the primary reference,
+  not an upper bound to aspire to;
+- a projection-only arm that trains the same projection but writes nothing, so a gain from the
+  projection cannot be read as a gain from the store;
+- shuffled later query; held-out project or question groups; at least five initialization seeds.
 
-Required controls:
-
-- random capacity and untrained writer;
-- randomly permuted write teacher;
-- recency, causal novelty, and causal surprise heuristics;
-- full frozen-embedding cosine with the query visible, as a retrieval upper reference;
-- shuffled later query;
-- held-out project or held-out question groups;
-- at least five initialization seeds for the adopted configuration.
+The frozen-generator endpoint carries a validity gate (`instrument_usable`): the oracle must beat
+both no-memory and random, and its prompts must be untruncated. Two runs in Phase 31 failed that
+gate and were not interpreted — correctly, since the deferred episode construction excludes the
+second evidence session from the candidate pool, so no reader selecting from that pool can supply a
+complete fact.
 
 ## Datasets
 
-### Natural Claude revisit corpus
-
-Eight real earlier user turns precede one naturally recurring user turn by at least two turns. The
-weak label is lexical reuse. Entire projects are held out. The current artifact contains 775 training
-and 574 evaluation episodes; raw conversation text is not persisted in the repository.
-
-### ContextBench issue split
-
-An early title-like context drives write and a later issue body drives recall. This is larger and
-project-grouped but synthetically separates one document, so it is supporting evidence rather than
-the strongest temporal test.
-
-### LongMemEval-S external validation
-
-The official cleaned LongMemEval-S histories provide evidence-session IDs. Each evidence session is
-mixed with seven deterministic distractor sessions, while the question is hidden until recall. The
-split holds out complete question IDs and target position is deterministically randomized. This
-tests cross-source transfer of the phenomenon on a public benchmark, although its conversations are
-constructed and evidence sessions may contain generation artifacts.
-
-## Current result
-
-On the natural Claude corpus at two-of-eight capacity, the staged model retains the future-relevant
-turn in 0.5906 +/- 0.0121 of held-out-project episodes versus a 0.25 random-capacity expectation.
-Recall top-1 is 0.5627 +/- 0.0164 and falls to 0.3369 +/- 0.0050 when the later query is shuffled.
-Conditional on the target surviving, top-1 is approximately 0.9527. This localizes the remaining
-bottleneck to write selection.
-
-Adding causal position, novelty, and prediction-surprise signals raises five-seed retention to
-0.6279 +/- 0.0097 and top-1 to 0.5882 +/- 0.0085 on MPS; an independent CPU repeat reaches
-0.6195 +/- 0.0101 and 0.5878 +/- 0.0075, preserving the direction of both gains.
-
-A training-free length control added in Phase 15 changes what the public validation supports. Keeping
-the two longest candidates retains the evidence in 0.3868 of held-out Claude episodes against the
-learned 0.6195, so the private result survives. On LongMemEval-S the same rule retains 0.4159 against
-a learned 0.4069, so the earlier external claim — 0.4030 +/- 0.0263 against a 0.25 random-capacity
-expectation — used the wrong reference and is withdrawn. The public benchmark currently cannot
-distinguish this layer from a length heuristic.
-
-Phase 16 resolves what that implies. Giving the same layer length-only write inputs reaches
-0.4056 +/- 0.0128 retention on Claude against 0.5920 +/- 0.0099 for the frozen embedding, and making
-length explicit alongside the embedding does not improve it. The private margin is therefore content,
-not length. On LongMemEval-S the length arm instead converges to the longest-two rule with zero seed
-variance and beats the embedding arm, so the failure is specific to that benchmark's write step; even
-there, length-only traces recall at 0.2277 top-1 against the embedding arm's 0.3198, because a later
-query has nothing to match in a length-only trace.
-
-A gated frozen-generator endpoint supplies the first task-level evidence. Scoring the gold answer
-with a frozen `Qwen/Qwen2.5-1.5B-Instruct`, and reading every condition on the same episodes, the
-layer reaches 2.1508 answer NLL against an oracle 2.2135 and a no-memory 2.7587 on the 29 of 72
-episodes where its write succeeded; on the 43 where it failed the injected memory is near-inert at
-2.9195 against 2.9593, while the oracle still reaches 2.3937. The entire task-level shortfall is
-write selection, not recall. A 14,463-parameter
-fast-weight alternative with a 144-scalar matrix state reaches 0.6066 +/- 0.0250 retention and 0.5575
-+/- 0.0211 top-1 on the natural Claude corpus, showing a parameter-efficient parametric-memory
-effect but not surpassing the adopted trace layer.
+- **Natural Claude revisit corpus.** Eight real earlier user turns precede one naturally recurring
+  turn; weak label is lexical reuse; entire projects held out. 775 training / 574 evaluation
+  episodes. Raw text is not persisted in the repository.
+- **ContextBench issue split.** Larger and project-grouped, but synthetically separates one document,
+  so it is supporting rather than decisive.
+- **LongMemEval-S.** Official cleaned histories with evidence-session IDs, each mixed with seven
+  deterministic distractors, question hidden until recall, question IDs held out, target position
+  deterministically randomized. Two episode constructions are used and they are **not
+  interchangeable**: `revisit` episodes carry complete evidence in one session (890 episodes,
+  688/202 split), while `deferred` episodes split evidence across two sessions and place only the
+  first in the candidate pool (300 episodes).
 
 ## Related design lineage
 
 - The [Differentiable Neural Computer](https://www.nature.com/articles/nature20101) established a
   learned controller with read, write, allocation, and free operations over bounded external state.
 - [LongMem](https://arxiv.org/abs/2306.07174) motivates keeping the backbone frozen and training a
-  decoupled side network, avoiding representation staleness and full-model adaptation.
+  decoupled side network.
 - [TTT layers](https://arxiv.org/abs/2407.04620) treat the hidden state as a model updated by an
-  inner self-supervised objective; this motivates the planned teacher-free state-update branch.
+  inner self-supervised objective.
 - [Titans](https://arxiv.org/abs/2501.00663) prioritizes surprising inputs and combines momentum with
-  adaptive decay. Our causal surprise feature is a cheap diagnostic precursor, not an implementation
-  of Titans.
+  adaptive decay. Our causal surprise feature is a cheap diagnostic precursor, not an implementation.
+  Phases 21, 27 and 30 independently find that decay does not help in an error-correcting store,
+  which is a boundary on where adaptive-decay designs apply.
 - [MIRAS](https://arxiv.org/abs/2504.13173) separates memory structure, attentional-bias objective,
-  retention gate, and update algorithm. Those four axes define the ablation matrix here.
-- [MEMORYLLM](https://arxiv.org/abs/2402.04624) studies a fixed-size, self-updatable latent memory
-  pool inside a transformer; our layer instead remains independently trainable and attachable.
-- [LongMemEval](https://arxiv.org/abs/2410.10813) supplies the public long-term conversational-memory
-  validation source.
+  retention gate, and update algorithm — the four axes of the ablation matrix here.
+- [MEMORYLLM](https://arxiv.org/abs/2402.04624) studies a fixed-size self-updatable latent memory pool
+  inside a transformer; this layer instead remains independently trainable and attachable.
+- [LongMemEval](https://arxiv.org/abs/2410.10813) supplies the public validation source.
+- Johnson–Lindenstrauss is the relevant negative prior for Track B: random projections already
+  preserve the geometry the retrieval needs, which is what the projection-only control measures.
 
-## Claims that are not yet supported
+## Claims that are not supported
 
-The experiments do not yet show intrinsic importance, human-like consolidation, indefinite online
-learning, answer-quality improvement, or robust forgetting. The weak teachers reveal future utility
-during training, and frozen embeddings already contain substantial semantic geometry. A paper must
-therefore frame the contribution as **query-hidden capacity selection plus later spontaneous
-activation**, and treat teacher-free importance discovery as the next hypothesis rather than a
-completed result.
+The experiments do not show intrinsic importance, human-like consolidation, indefinite online
+learning, robust forgetting, or **retrieval improvement over the frozen encoder**. That last one is
+now a measured negative rather than an untested gap, and it is the strongest constraint on how this
+work can be framed.
 
-Phase 17 adds two limits. The layer's advantage over a training-free length rule exists only under a
-tight budget: at three or four of eight slots it no longer beats that rule. And deferral was tested
-where the later event is as informative as the query itself, so the result shows a bounded memory
-exploiting clear later evidence, not hard temporal credit assignment.
+Two further limits carry from Track A. The layer's advantage over a training-free length rule exists
+only under a tight budget — at three or four of eight slots it no longer beats that rule. And
+deferral was tested where the later event is as informative as the query itself, so the result shows
+a bounded memory exploiting clear later evidence, not hard temporal credit assignment.
+
+A paper from this work should be framed as **a measured ceiling on query-hidden write selection, plus
+a negative result on associative storage as retrieval**, with the biological component measurements
+as supporting evidence about what such a store can hold. It should not be framed as a memory system
+that improves question answering.
 
 ## Next decisive experiments
 
-The original items 1 to 3 are complete and reported in `RESULTS.md` Phase 14, item 5 has a gated
-first measurement in Phase 15, the length-residual question raised in Phase 15 is answered in
-Phase 16, and Phase 17 tests two-stage deferral. The remaining order is:
-
-1. Close the gap between the learned relation head and a training-free cosine rule with the same
-   inputs, which Phase 17 measures at about 0.29 retention and which dominates every other term.
-   Exposing one untransformed similarity scalar recovers 0.0882 of it while a shuffled event recovers
-   none, so the frozen projections rather than the objective are the place to look.
-2. Find a public corpus whose evidence is not length-correlated, and whose later evidence degrades
+1. Establish where an associative store *does* pay, if anywhere. Phase 31 rules out retrieval against
+   the same encoder at loads up to 128 sessions. The remaining candidates are regimes cosine cannot
+   serve at all: composition across traces, updates that must overwrite an obsolete fact in place,
+   and cues that are not embeddings of text.
+2. Re-run the Track B component measurements under the Phase 30 constants rather than the hand-set
+   ones. The Phase 22 rescue window in particular was measured at a tag decay of 0.9, and the learned
+   value is 0.9964, which should widen it materially.
+3. Find a public corpus whose evidence is not length-correlated and whose later evidence degrades
    with distance. Phase 16 shows the Claude margin is semantic and that LongMemEval-S cannot
-   corroborate it; Phase 17 adds that LongMemEval-S has no measurable deferral window either, so a
-   retention-against-delay curve needs a different corpus.
-2. Test the remaining teacher correlates the way length was tested: turn position, vocabulary rarity,
+   corroborate it; Phase 17 adds that LongMemEval-S has no measurable deferral window.
+4. Test the remaining teacher correlates the way length was tested: turn position, vocabulary rarity,
    and question form each need an explicit-feature arm before the weak teacher can be called clean.
-3. Add explicit retention/forget gates and evaluate knowledge-update examples, where obsolete
-   evidence must lose activation to newer evidence. Phase 14 rejected an adaptive retention gate at
-   screening, so this needs more training episodes before it is worth retrying.
-4. Extend the generator endpoint to several seeds, the full evaluation split, and a second generator,
-   keeping the activation metrics as the mechanistic primary endpoint.
+5. Extend the generator endpoint to several seeds and a second generator, keeping the activation
+   metrics as the mechanistic primary endpoint and the validity gate as a precondition for reading
+   any of it.

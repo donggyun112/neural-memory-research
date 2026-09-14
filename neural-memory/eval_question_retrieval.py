@@ -12,6 +12,44 @@ from torch.nn import functional as F
 from neural_memory.trainable import TrainableMemory
 
 
+def load_episodes(path: Path) -> tuple[Tensor, Tensor, Tensor, int | None]:
+    """Read either feature layout and return candidates, question cues and targets.
+
+    The deferred artifact stores one flat block and carries the question under
+    ``query``; the revisit artifact is already split into train and eval and
+    carries it under ``feedback``. The fourth value is the size of the artifact's
+    own training split, or None when the artifact does not define one.
+    """
+    payload = torch.load(path, map_location="cpu", weights_only=True)
+    if "train_candidates" in payload:
+        candidates = torch.cat([payload["train_candidates"], payload["eval_candidates"]])
+        queries = torch.cat([payload["train_feedback"], payload["eval_feedback"]])
+        targets = torch.cat([payload["train_targets"], payload["eval_targets"]])
+        return (
+            F.normalize(candidates, dim=-1),
+            F.normalize(queries, dim=-1),
+            targets.long(),
+            len(payload["train_targets"]),
+        )
+    return (
+        F.normalize(payload["candidates"], dim=-1),
+        F.normalize(payload["query"], dim=-1),
+        payload["targets"].long(),
+        None,
+    )
+
+
+def split_episodes(
+    episodes: int, train_count: int | None, holdout: float, generator: torch.Generator
+) -> tuple[Tensor, Tensor]:
+    """Use the artifact's own split when it defines one, else draw a fresh one."""
+    if train_count is not None:
+        return torch.arange(train_count), torch.arange(train_count, episodes)
+    order = torch.randperm(episodes, generator=generator)
+    cut = int(episodes * (1.0 - holdout))
+    return order[:cut], order[cut:]
+
+
 def hit_rate(scores: Tensor, targets: Tensor) -> float:
     """Fraction of questions whose highest-scoring session is the evidence one."""
     return float((scores.argmax(dim=-1) == targets).float().mean())
@@ -129,19 +167,16 @@ def main() -> None:
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
-    payload = torch.load(args.features, map_location="cpu", weights_only=True)
-    candidates = F.normalize(payload["candidates"], dim=-1)
-    queries = F.normalize(payload["query"], dim=-1)
-    targets = payload["targets"].long()
+    candidates, queries, targets, train_count = load_episodes(args.features)
     episodes, traces, features = candidates.shape
 
     rows: list[dict[str, float]] = []
     for seed in (int(value) for value in args.seeds.split(",")):
         torch.manual_seed(seed)
         generator = torch.Generator().manual_seed(seed)
-        order = torch.randperm(episodes, generator=generator)
-        cut = int(episodes * (1.0 - args.holdout))
-        train_index, eval_index = order[:cut], order[cut:]
+        train_index, eval_index = split_episodes(
+            episodes, train_count, args.holdout, generator
+        )
         loaded = with_distractors(candidates, args.distractors, generator)
 
         model = TrainableMemory(

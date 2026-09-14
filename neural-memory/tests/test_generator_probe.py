@@ -7,8 +7,19 @@ import pytest
 import torch
 
 from eval_generator_utility import condition_indices, length_matched_selection
-from neural_memory.generator_probe import answer_token_nll, build_memory_prompt
+from neural_memory.generator_probe import (
+    answer_token_nll,
+    build_memory_prompt,
+    load_generator,
+)
 from neural_memory.longmemeval import iter_longmemeval_revisits
+
+
+def test_the_generator_is_loaded_once_across_calls() -> None:
+    # Scoring several conditions calls score_answer_nll repeatedly, and a
+    # per-call load of a multi-billion-parameter generator fills swap and stalls
+    # the run. Loading the model here must stay behind a cache.
+    assert load_generator.cache_info().maxsize == 1
 
 
 def test_build_memory_prompt_orders_and_truncates_sessions() -> None:

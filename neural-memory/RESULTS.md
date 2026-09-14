@@ -2233,3 +2233,60 @@ store which holds documents well is a store that answers questions well.
 Measured on LongMemEval-S deferred episodes with BGE-small-en-v1.5 embeddings, at the retrieval step
 only. The cosine baseline is the same frozen encoder the store reads from, so this is a claim about
 what the store adds to that encoder, not a claim about retrieval methods in general.
+
+# Phase 32: the rescue window was a property of a hand-set constant
+
+Phase 22 reported that a weakly written trace can be rescued by a later strong event, and that the
+window closes after a handful of intervening writes. That was measured at a tag decay of 0.9, which
+was chosen by hand. Phase 30 trained the same constant and it went to 0.9964. Re-measuring the window
+across decays, with capture held at Phase 22's 0.25 so only the decay moves:
+
+| Intervening writes | decay 0.9 | decay 0.99 | **decay 0.9964** | decay 1.0 |
+| ---: | ---: | ---: | ---: | ---: |
+| 0 | 0.8148 | 0.8148 | 0.8148 | 0.8148 |
+| 8 | 0.4571 | 0.7895 | **0.8149** | 0.8293 |
+| 32 | 0.0463 | 0.7145 | **0.8210** | 0.8831 |
+| 128 | 0.0000 | 0.4071 | **0.7996** | 1.0996 |
+| 256 | 0.0000 | 0.1518 | **0.6875** | 1.3690 |
+
+Values are the fraction of the full-strength ceiling that capture recovers. Taking the half-window as
+the last gap where recovery still exceeds half its value at zero:
+
+| Tag decay | Half-window |
+| ---: | ---: |
+| 0.9 (hand-set) | 8 intervening writes |
+| 0.99 | 64 |
+| **0.9964 (learned)** | **beyond 256** |
+| 1.0 | beyond 256 |
+
+The window is thirty-two times wider at the learned constant, and on any episode length this project
+actually runs it does not close at all. Phase 22's "the window closes" was a statement about the
+number 0.9, not about the mechanism.
+
+## What the learned value sits next to
+
+At a decay of exactly 1.0 the recovered fraction passes 1.0 and keeps climbing — 1.0996 at 128 gaps
+and 1.3690 at 256. A tag that never fades keeps capturing, so the rescued trace ends up written more
+strongly than it would have been at full strength in the first place. That is over-consolidation, not
+rescue, and it is what the ceiling reference exists to expose.
+
+The learned 0.9964 sits just below that boundary: wide enough that the window stays open across every
+realistic gap, short enough that recovery never exceeds what a full-strength write would have
+achieved. Nothing in the training objective mentioned a ceiling, so this is a third property the
+optimiser found rather than was given.
+
+## A transplant that does not work
+
+The first attempt at this re-measurement moved both learned constants across, tag decay 0.9964 and
+capture 0.9445, and produced recovered fractions between 1.1970 and 1.6802 at every gap. That is not
+a wider window; it is the wrong parameterisation. `analyze_tagging_window.py` scales capture by an
+explicit `event_strength` of 2.0, while `TrainableMemory` applies a gain of
+`capture * current * (1 - current)`, which cannot exceed a quarter of the capture value. The two
+numbers named `capture` are not the same quantity, and only the decay transplants directly.
+
+## Interpretation boundary
+
+Untrained random projections, sparse codes of width 32, and the same delta-rule store as Phase 22, so
+the comparison against that phase is clean. What transplants from Phase 30 is the decay constant
+alone; the capture rate would need the trained parameterisation to be carried over honestly, which
+would mean re-running this measurement inside `TrainableMemory` rather than beside it.

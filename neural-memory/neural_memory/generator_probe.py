@@ -1,10 +1,35 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from functools import lru_cache
 
 import torch
 from torch import Tensor
 from torch.nn import functional as F
+
+
+@lru_cache(maxsize=1)
+def load_generator(model_name: str, device: str, dtype: str) -> tuple[object, object]:
+    """Load a frozen generator once and hand the same one to every later call.
+
+    Scoring several conditions means calling into here several times, and a
+    multi-billion-parameter generator reloaded per call does not leave with the
+    local that held it — the allocator keeps the pages. Seven loads of a 1.5B
+    model in bfloat16 filled swap and the process spent its time paging instead
+    of scoring. One entry is cached, so switching models still frees the last.
+    """
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    if tokenizer.pad_token_id is None:
+        raise ValueError("generator tokenizer must define a padding token")
+    # Gemma 3 270M produces non-finite states in float16 on MPS, so float32 is
+    # the default; bfloat16 keeps a multi-billion-parameter generator in memory.
+    model = AutoModelForCausalLM.from_pretrained(model_name, dtype=getattr(torch, dtype)).to(
+        device
+    )
+    model.eval()
+    return tokenizer, model
 
 
 def build_memory_prompt(
@@ -99,18 +124,8 @@ def score_answer_nll(
     if dtype not in {"float32", "bfloat16"}:
         raise ValueError(f"unsupported generator dtype: {dtype}")
 
-    from transformers import AutoModelForCausalLM, AutoTokenizer
-
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    tokenizer, model = load_generator(model_name, device, dtype)
     pad_token_id = tokenizer.pad_token_id
-    if pad_token_id is None:
-        raise ValueError("generator tokenizer must define a padding token")
-    # Gemma 3 270M produces non-finite states in float16 on MPS, so float32 is
-    # the default; bfloat16 keeps a multi-billion-parameter generator in memory.
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name, dtype=getattr(torch, dtype)
-    ).to(device)
-    model.eval()
     softcap = getattr(model.config, "final_logit_softcapping", None)
 
     scores: list[Tensor] = []
