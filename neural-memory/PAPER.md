@@ -143,6 +143,15 @@ This does not retract the Track B measurements. They were about the store's abil
 was given, and they stand. What does not follow — and what the project assumed for twelve phases — is
 that a store which holds documents well is a store that answers questions well.
 
+Phase 34 then tested the one case the write rule is structurally suited to. The delta rule overwrites
+in place, which no cosine score can express, so a fact stated and later superseded should be its
+regime. On 78 LongMemEval knowledge-update episodes the overwrite is causally demonstrated — reversing
+the write order, which changes no embedding, flips the preference for the current statement from
+0.7949 to 0.2128 — and the store still loses. Cosine alone reaches 0.4487 hit rate and the store
+0.6333, but "take the later of the cosine top-2", a rule with nothing to fit, reaches **0.8974**. The
+store expresses supersession through partial overlap of sparse codes; the candidate list expresses it
+exactly, for free.
+
 ## Evaluation design
 
 The primary Track A outcome is whether the future-relevant item survives the capacity bottleneck and
@@ -224,9 +233,11 @@ that improves question answering.
 ## Next decisive experiments
 
 1. Establish where an associative store *does* pay, if anywhere. Phase 31 rules out retrieval against
-   the same encoder at loads up to 128 sessions. The remaining candidates are regimes cosine cannot
-   serve at all: composition across traces, updates that must overwrite an obsolete fact in place,
-   and cues that are not embeddings of text.
+   the same encoder at loads up to 128 sessions, and Phase 34 rules out the in-place update case that
+   most favours the write rule: the overwrite is causally real, shown by a write-order reversal that
+   flips preference from 0.7949 to 0.2128, and a parameter-free "cosine top-2, take the later" rule
+   still beats the store 0.8974 to 0.6333. The remaining candidates are composition across several
+   traces and cues that are not embeddings of text. Both are hypotheses, not defences.
 2. Re-run the Track B component measurements under the Phase 30 constants rather than the hand-set
    ones. The Phase 22 rescue window in particular was measured at a tag decay of 0.9, and the learned
    value is 0.9964, which should widen it materially.

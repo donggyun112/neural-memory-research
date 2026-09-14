@@ -2377,3 +2377,79 @@ per episode, and that a gate comparing means was unable to report that. A genera
 usable context, or a corpus whose evidence is shorter relative to the window, might behave
 differently — but that has to be demonstrated before any answer-likelihood number from this project
 is quoted.
+
+# Phase 34: the one regime that should favour the store, and two lines that beat it
+
+Phase 31 showed the store losing to cosine at retrieval and named the reason: a delta-rule store is
+fitted to return what was written, and retrieval by a novel cue lives in the encoder's geometry
+already. That argument has an exception. The delta rule subtracts what the state already returns for
+a key before adding, so a second document landing on the same units *replaces* the first. Nothing in
+a cosine score can express that. If the store pays anywhere, it pays where a fact was stated and then
+superseded.
+
+LongMemEval has exactly that category. `iter_longmemeval_updates` builds 78 episodes from the
+knowledge-update questions: both evidence sessions stay in the candidate pool, candidates keep their
+original temporal order, and the target is the *later* statement. A reader that only matches topic
+has no way to choose between the two.
+
+## The mechanism is real
+
+Untrained random projections, sparse codes of width 32, five seeds:
+
+| Reader | Hit rate | Prefers the current statement |
+| --- | ---: | ---: |
+| Chance | 0.1250 | 0.5000 |
+| Cosine | 0.4487 | 0.4744 |
+| Recency (last slot) | 0.4231 | 1.0000 (by construction) |
+| **Store, untrained** | **0.6333 +/- 0.0310** | **0.7949 +/- 0.0229** |
+| Store, write order reversed | — | **0.2128 +/- 0.0418** |
+
+Cosine sits at 0.4744 on the pairwise question, which is below chance: it cannot tell the two
+statements apart and leans very slightly toward the older one. The store reaches 0.7949 without being
+trained at all.
+
+The reversal is the control that makes this causal. Writing the identical documents in the opposite
+order changes no embedding, so anything order-free must be unmoved — and the store's preference flips
+from 0.7949 to 0.2128. The two statements share 45.7% of their active units, which is the overwrite
+happening.
+
+## And it does not matter
+
+The store's win over plain cosine is a win over the wrong baseline. Cosine knows nothing about order,
+and neither does it have to: order is free to read off the candidate list.
+
+| Reader | Hit rate |
+| --- | ---: |
+| Cosine | 0.4487 |
+| Store, untrained | 0.6333 |
+| Cosine plus a recency tilt, best of nine weights | 0.7821 |
+| **Cosine top-2, take the later one** | **0.8974** |
+
+The second heuristic has no fitted parameter at all. It shortlists by topic, then picks the later of
+the two, and it beats the store by 0.2641. Both statements land in the cosine top-2 in 79.5% of
+episodes, which is the whole trick: cosine is excellent at finding the *pair* and useless at ordering
+it, and the ordering is an integer comparison.
+
+The recency-tilt sweep is resolved in the baseline's favour — the best of nine weights, chosen on the
+same data — and that one is therefore optimistic. The top-2 rule is not; it has nothing to tune.
+
+## What this settles
+
+Overwriting is a genuine property of the write rule, demonstrated causally by the reversal control,
+and it is the only thing in this project that a cosine score structurally cannot do. It is still not
+worth having here, because expressing "later supersedes earlier" through partial overlap of sparse
+codes is a lossy way to say something that an index already says exactly.
+
+Combined with Phase 31, the design has now been measured in the regime it was built for and in the
+regime that most favours it, and it loses both. The remaining untested regimes — composition across
+several traces, cues that are not embeddings of text — are hypotheses, not defences, and neither is
+supported by anything measured so far.
+
+## Interpretation boundary
+
+78 episodes, one corpus, untrained projections. Training was not applied because the overwrite
+property belongs to the write rule rather than to a learned projection, and 78 episodes cannot
+support a held-out split of any useful size; a trained variant could close part of the 0.2641 gap but
+would have to close all of it against a parameter-free rule. The heuristics compared here have access
+to candidate order, which the store also has — nothing is being given to the baseline that the store
+was denied.

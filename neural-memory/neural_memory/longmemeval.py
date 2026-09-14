@@ -52,6 +52,73 @@ class LongMemEvalDeferred:
     split: str
 
 
+@dataclass(frozen=True)
+class LongMemEvalUpdate:
+    """A fact stated once and then superseded, with both statements available."""
+
+    question_id: str
+    candidates: tuple[str, ...]
+    question: str
+    answer: str
+    target_offset: int
+    superseded_offset: int
+    split: str
+
+
+def iter_longmemeval_updates(
+    path: Path,
+    *,
+    candidates: int = 8,
+) -> Iterator[LongMemEvalUpdate]:
+    """Build episodes where the answer changed and the old statement is still stored.
+
+    Every other builder here hides the second evidence session, which is right
+    for asking whether a reader finds evidence but wrong for asking whether it
+    can tell a current fact from an obsolete one. Knowledge-update questions are
+    the only ones whose answer is defined by which statement came last, so both
+    evidence sessions stay in the pool, the candidates keep their original
+    temporal order, and the target is the *latest* evidence session. A reader
+    that merely matches the question topic has no way to choose between the two.
+    """
+    if candidates < 3:
+        raise ValueError("at least three candidates are required to hold two statements")
+    payload = json.loads(path.read_text())
+    if not isinstance(payload, list):
+        raise ValueError("LongMemEval root must be a list")
+    for row in payload:
+        if str(row["question_type"]) != "knowledge-update":
+            continue
+        question_id = str(row["question_id"])
+        session_ids = [str(value) for value in row["haystack_session_ids"]]
+        sessions = row["haystack_sessions"]
+        if len(session_ids) != len(sessions):
+            raise ValueError(f"session id/content mismatch for {question_id}")
+        by_id = dict(zip(session_ids, sessions, strict=True))
+        position = {value: index for index, value in enumerate(session_ids)}
+        evidence = sorted(
+            {str(value) for value in row["answer_session_ids"] if str(value) in by_id},
+            key=lambda value: position[value],
+        )
+        if len(evidence) < 2:
+            continue
+        evidence_set = set(evidence)
+        distractors = [value for value in session_ids if value not in evidence_set]
+        needed = candidates - len(evidence)
+        if needed < 1 or len(distractors) < needed:
+            continue
+        ordered = sorted(distractors, key=lambda value: _hash_order(f"{question_id}:{value}"))
+        chosen = sorted([*evidence, *ordered[:needed]], key=lambda value: position[value])
+        yield LongMemEvalUpdate(
+            question_id=question_id,
+            candidates=tuple(_session_text(by_id[value]) for value in chosen),
+            question=str(row["question"]),
+            answer=str(row.get("answer", "")),
+            target_offset=chosen.index(evidence[-1]),
+            superseded_offset=chosen.index(evidence[0]),
+            split=_split_for(question_id),
+        )
+
+
 def _split_for(question_id: str) -> str:
     return "eval" if int.from_bytes(_hash_order(question_id)[:2]) % 5 == 0 else "train"
 
