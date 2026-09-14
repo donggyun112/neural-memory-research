@@ -10,6 +10,7 @@ from torch.nn import functional as F
 
 RecallMode = Literal["candidate", "query", "joint"]
 SimilarityMode = Literal["none", "feature", "residual"]
+WriteMode = Literal["learned", "uniform", "surprise", "novelty"]
 
 
 @dataclass(frozen=True)
@@ -473,6 +474,7 @@ class AssociativeDeferredMemory(nn.Module):
         event_gain_bound: float = 1.0,
         competitive_gain: bool = True,
         tie_keys: bool = True,
+        write_mode: WriteMode = "learned",
     ) -> None:
         super().__init__()
         if feature_dim < 1 or memory_dim < 1:
@@ -483,6 +485,13 @@ class AssociativeDeferredMemory(nn.Module):
         self.event_gain_bound = event_gain_bound
         self.competitive_gain = competitive_gain
         self.tie_keys = tie_keys
+        if write_mode not in ("learned", "uniform", "surprise", "novelty"):
+            raise ValueError(f"unknown write mode: {write_mode}")
+        self.write_mode = write_mode
+        # Two calibration scalars so an intrinsic rule can set its own scale.
+        # They read the present moment only; no future-utility label reaches them.
+        self.importance_scale = nn.Parameter(torch.tensor(2.0))
+        self.importance_bias = nn.Parameter(torch.tensor(0.0))
         self.candidate_key = nn.Linear(feature_dim, memory_dim)
         self.candidate_value = nn.Linear(feature_dim, memory_dim)
         self.query_key = nn.Linear(feature_dim, memory_dim)
@@ -524,9 +533,27 @@ class AssociativeDeferredMemory(nn.Module):
         for slot in range(traces):
             key, value = keys[:, slot], values[:, slot]
             prediction = self._read(matrix, key)
-            strength = self.write_strength(
-                torch.cat((key, value, value - prediction), dim=-1)
-            ).squeeze(-1).sigmoid()
+            error = value - prediction
+            if self.write_mode == "uniform":
+                # Importance is not utility, so the least presumptuous policy is
+                # to write everything equally and lose nothing.
+                strength = torch.ones_like(key[:, 0])
+            elif self.write_mode == "surprise":
+                # How far the memory's own prediction missed: available now, and
+                # unrelated to whether the item will ever be asked for.
+                strength = (self.importance_scale * error.norm(dim=-1) + self.importance_bias).sigmoid()
+            elif self.write_mode == "novelty":
+                if slot == 0:
+                    similarity = torch.zeros_like(key[:, 0])
+                else:
+                    similarity = (keys[:, :slot] * key[:, None, :]).sum(dim=-1).max(dim=1).values
+                strength = (
+                    self.importance_scale * (1.0 - similarity) + self.importance_bias
+                ).sigmoid()
+            else:
+                strength = self.write_strength(
+                    torch.cat((key, value, error), dim=-1)
+                ).squeeze(-1).sigmoid()
             strength = strength * masks[:, slot].to(strength.dtype)
             delta = (value - prediction)[..., :, None] * key[..., None, :]
             eligibility[:, slot] = strength[..., None, None] * delta
