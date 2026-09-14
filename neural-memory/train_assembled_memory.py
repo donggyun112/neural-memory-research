@@ -45,6 +45,7 @@ def main() -> None:
     parser.add_argument("--learning-rate", type=float, default=3e-3)
     parser.add_argument("--holdout", type=float, default=0.3)
     parser.add_argument("--fixed-sparsity", action="store_true")
+    parser.add_argument("--learned-width", action="store_true")
     parser.add_argument("--seeds", default="7,17,27")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
@@ -73,6 +74,7 @@ def main() -> None:
             key_dim=args.key_dim,
             value_dim=args.value_dim,
             adaptive=not args.fixed_sparsity,
+            learned_width=args.learned_width,
         )
         before = evaluate(model, eval_blocks)
         before_seen = evaluate(model, seen_blocks)
@@ -97,6 +99,7 @@ def main() -> None:
                 "untrained_seen": before_seen,
                 "trained_seen": after_seen,
                 "gain_seen": after_seen - before_seen,
+                "mean_width": sum(model._last_widths) / len(model._last_widths),
             }
         )
 

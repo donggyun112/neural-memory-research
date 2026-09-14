@@ -2024,11 +2024,36 @@ not transfer. The learned projections are picking up document-specific structure
 generalises. That is a real limit on the result, not a reason to discount it: the transferred half is
 measured on documents the projections never saw.
 
+## Learning the width too, and why it costs more than it buys
+
+The logit scale was already learned; the note that it was hand-set was wrong. What remained fixed was
+the width rule, and its active count is an integer chosen by a top-k, so nothing about how many units
+to keep can reach a gradient through it. Making it learnable means replacing the counted budget with
+a graded gate: each unit is kept in proportion to how far its magnitude exceeds a threshold that
+rises with the log of the state's size, with the offset, slope and temperature all trained.
+
+| Sparsification | Held-out before | Held-out after | Gain | Mean width |
+| --- | ---: | ---: | ---: | ---: |
+| **Counted budget, hand-fitted rule** | **0.9128** | **0.9357** | +0.0229 +/- 0.0176 | 27.8 |
+| Graded gate, learned threshold | 0.7812 | 0.8042 | +0.0229 +/- 0.0733 | 17.3 |
+
+The two gain the same amount and the gate starts 0.1316 lower, with four times the seed variance.
+The width is not what costs it. A graded gate keeps every one of the five hundred and twelve units
+and merely attenuates most of them, so the reported width of 17.3 is the sum of the gate rather than
+a count of what is stored — all the units are still in the key. Phase 20 established that sparse
+expansion wins by keeping few units active so that writes collide less, and a gate that leaves the
+tail in place gives that up.
+
+This is a structural conflict rather than a failed implementation. The property that makes the
+sparsity valuable is the discreteness of the selection, and the discreteness is exactly what blocks
+the gradient. Making the width learnable in this way removes the thing the width was worth having.
+
 ## Interpretation boundary
 
-Only the projections are learned. The sparsity exponent, its bounds, and the logit scale are still
-hand-set, and the components the Phase 29 ablation found unhelpful on this task — the parallel store
-and the tags — are absent from the trained model rather than trained and found wanting.
+Only the projections and the logit scale are learned. The width rule stays a hand-fitted top-k, for
+the reason above, and the components the Phase 29 ablation found unhelpful on this task — the
+parallel store and the tags — are absent from the trained model rather than trained and found
+wanting.
 
 The absolute numbers are also not comparable with Phase 29's. Episodes here are drawn from a pool
 that is a fraction of the corpus, so the nearest-neighbour sets are less alike and the task is
