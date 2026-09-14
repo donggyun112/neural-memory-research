@@ -1928,3 +1928,56 @@ cleanly. Forgetting should not adapt, and should not happen at all, because erro
 has already handled the interference that decay would be responding to. Sparsity should adapt, can be
 driven by a signal the state computes about itself, and doing so is worth more than any other single
 change measured in this phase group.
+
+# Phase 29: assembling the parts, and finding two of them do not pay
+
+Date: 2026-09-14
+
+Every component of the redesign was validated in isolation and none had been combined. `AssembledMemory`
+puts them in one store — adaptive sparsity from the state's magnitude, no decay, a slower parallel
+store, fading eligibility tags, and a coincidence-addressed opponent modulation — so each can be
+removed while the rest stay.
+
+The task is discrimination at three loads, on similar document sets, with one weakly written document
+per episode so the tags and the later event have something to act on.
+
+| Configuration | Load 8 | Load 32 | Load 128 | Mean | Cost |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| **Full** | 0.7458 | 0.7375 | 0.7191 | 0.7342 | — |
+| Fixed sparsity | 0.7063 | 0.7141 | 0.6987 | 0.7063 | -0.0278 |
+| No parallel store | 0.7063 | 0.7391 | **0.7966** | **0.7473** | **+0.0132** |
+| No tags | 0.7438 | 0.7375 | 0.7191 | 0.7335 | -0.0007 |
+| With decay at 0.95 | 0.6937 | 0.4708 | 0.1609 | 0.4418 | -0.2923 |
+| Dense code, 128 active | 0.4583 | 0.5109 | 0.6626 | 0.5440 | -0.1902 |
+
+## Three parts earn their place
+
+Not decaying is the largest single effect in the whole redesign: adding a 0.95 decay costs 0.2923 on
+average and collapses the highest load from 0.7191 to 0.1609. Sparsity is next at 0.1902, and making
+that sparsity adaptive adds a further 0.0278 over a fixed budget. All three hold at every load.
+
+## Two do not
+
+Removing the parallel store *improves* the mean by 0.0132, and by 0.0775 at the highest load. That is
+not a contradiction of Phase 24, which showed a slow store is what makes two answers to one cue
+representable and lets the expressed answer change with delay. This task has one answer per document
+and never asks anything to change, so the second store contributes nothing it can use and adds its
+interference anyway. A component validated against the phenomenon it exists for can still be dead
+weight against a task that never presents that phenomenon.
+
+The tags are worth 0.0007, which is nothing. The reason is in the setup rather than the mechanism:
+one document per episode is written weakly, so there is a single tag to rescue and its effect is
+diluted across every other document's discrimination score. Phase 22 measured the rescue on the
+rescued trace itself and found it large; this measures the store as a whole and finds it invisible.
+
+## Interpretation boundary
+
+This is an ablation of one configuration on one task, and the two negative results are both explained
+by the task rather than by the components. That is the finding worth keeping: validating a mechanism
+against the phenomenon it was designed for does not establish that it pays in a system, and only the
+assembly shows which parts are carrying the result. The three that pay here are the ones whose
+benefit is about interference, which is what this task measures.
+
+Nothing is trained. The sparsity exponent, the tag decay, the capture rate and the slow store's
+constants are all fitted or chosen by hand, so the ablation compares designs rather than learned
+solutions.
