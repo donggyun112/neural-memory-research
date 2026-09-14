@@ -1691,3 +1691,65 @@ write corrects the earlier one away. Every memory this project built before Phas
 store, which means that whole line could not have represented a revised belief alongside the one it
 replaced — the failure of the knowledge-update subset in Phase 17 now has a mechanical explanation
 rather than only a construction-level one.
+
+# Phase 25: competitive allocation, and where the trade-off does not appear
+
+Date: 2026-09-14
+
+Measurement 5 tests the allocation rule this project started from. Jeong et al. report that
+potentiated inputs are preferentially recruited while the recall-active population stays roughly
+constant, which implies allocation is zero-sum: what one trace takes should come out of others.
+
+The competitive form was tried once before, in the associative model, and it made things worse. That
+attempt is not evidence, because its addressing pathway was broken — the coincidence response was
+normalised, which removed the address entirely. Phase 23 fixed that, so the constraint can now be
+tested on a pathway that works.
+
+## Setup
+
+Sixteen documents stored, a weakening event addressed to one of them through coincidence. The free
+arm applies the gains as computed; the competitive arm subtracts their mean so they sum to zero,
+making recruitment zero-sum at the level of the parameter.
+
+A constraint that simply spends less plasticity is not a fair win, and one that spends more is not a
+real one, so both arms are also compared after rescaling each to the same total update norm.
+
+## Result
+
+One hundred and fifty episodes, three seeds.
+
+| | Free | Competitive |
+| --- | ---: | ---: |
+| Change in the addressed trace | -0.10249 | -0.08815 |
+| Mean change in the others | -0.00570 | -0.00499 |
+| Selectivity | 0.39975 | 0.39554 |
+| Change in total recall | -0.18798 | -0.16294 |
+| **At equal plasticity budget** | **-0.08098** | **-0.08815** |
+
+**The constraint does not hurt.** At matched budget the competitive arm moves its target by 0.08815
+against 0.08098, about nine percent more, so forcing the trade-off buys a little efficiency rather
+than costing anything. On the stated criterion — fails if the constraint only hurts — the prediction
+survives.
+
+**The trade-off itself does not appear.** Zeroing the sum of gains does not produce a zero-sum
+outcome: the untargeted traces still fall, by 0.00499 against 0.00570 in the free arm, rather than
+rising to compensate. Total recall shifts by -0.16294 rather than staying put. The constraint holds
+at the level of the parameter and does not survive the translation to what the memory returns,
+because the traces are not orthogonal and a gain redistributed across overlapping traces does not
+redistribute their readouts.
+
+**Selectivity is unchanged**, 0.39975 against 0.39554. Competition does not make the same plasticity
+more discriminating; it only spends it on the target more efficiently.
+
+## Interpretation boundary
+
+The constant-population property is what the biology actually reports, and it is measured here in
+recall rather than in anything corresponding to a population of active units. A store whose traces
+overlap has no clean analogue of "how many units are active", so the mismatch found here may be a
+fact about that translation rather than about allocation.
+
+The effect is also small. Nine percent at matched budget is a real ordering — it held across all
+three seeds — but it is not the kind of margin that would justify adopting the constraint on
+performance grounds alone. Its better justification remains the one from Phase 23: a pathway that
+can only add is rank-preserving, and a constraint forcing gains to trade off is one way to guarantee
+it can reorder.
