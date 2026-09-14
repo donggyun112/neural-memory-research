@@ -2453,3 +2453,93 @@ support a held-out split of any useful size; a trained variant could close part 
 would have to close all of it against a parameter-free rule. The heuristics compared here have access
 to candidate order, which the store also has — nothing is being given to the baseline that the store
 was denied.
+
+# Phase 38: a different question, and the first mechanism that nearly holds
+
+Every measurement so far asked the store to *retrieve*, and Phase 31 explained why it cannot win
+there: a linear associative read is at best the similarity structure it was handed, so writing can
+only lose. Familiarity is not that quantity. Marking the cells a document activates and asking what
+share of a cue's cells are already marked measures accumulated evidence across every stored item at
+once, where maximum cosine measures the single best match. A cue matching one item at 0.6 and a cue
+matching twenty items at 0.3 order differently under the two, and neither approximates the other.
+
+The corpus has the right question for this and the project had been discarding it. Thirty of the five
+hundred LongMemEval questions are abstention questions — "what is the name of my hamster?", answered
+"you mentioned your cat Luna but not a hamster" — and every builder here passes
+`exclude_abstention=True`.
+
+## Baselines fixed before measuring
+
+| Reader | State | What it is |
+| --- | --- | --- |
+| `question_length` | none | abstention questions average 62.5 characters against 86.4, so the confound is a reader |
+| `max_cosine` | O(N) | the obvious gate: is anything stored close to the cue? |
+| `topk_cosine_sum` | O(N) | the obvious accumulator, its `k` swept and resolved in its own favour |
+| `cell_overlap` | **O(1)** | the proposal |
+
+Falsification, stated in advance: if the fixed-size filter does not beat the accumulating baseline,
+it buys a smaller state at the cost of accuracy and adds no capability.
+
+## The first attempt could not decide anything
+
+On the thirty real abstention questions against ninety answerable ones, the filter placed last at
+0.6704 AUC, behind `max_cosine` 0.7333, `topk_cosine_sum_4` 0.7259, and `question_length` 0.6831. But
+bootstrapping every comparison returns intervals that all straddle zero — `max_cosine` minus
+`question_length` is +0.0505 [-0.0941, +0.1907]. **Thirty negatives cannot resolve differences of this
+size.** The correct reading was not "rejected" but "this test decides nothing", which is the reading
+Phase 15 failed to make about its own 72 episodes.
+
+## A design that can decide
+
+Every answerable question becomes its own negative: write the same haystack with its evidence
+sessions removed, and drop an equal number of random distractors from the positive side so both
+stores hold the same count. Identical words, identical question length, identical store size; the
+only difference is whether the answer is in there. That gives 200 matched pairs instead of 30
+negatives, and makes the comparison paired.
+
+| Reader | State | Win rate | 95% interval |
+| --- | --- | ---: | --- |
+| `topk_cosine_sum_48` | O(N) | **0.9793** | [0.9650, 0.9907] |
+| `topk_cosine_sum_32` | O(N) | 0.9782 | [0.9629, 0.9907] |
+| **`cell_overlap_graded`** | **O(1)** | **0.9700** | [0.9536, 0.9836] |
+| `topk_cosine_sum_8` | O(N) | 0.9596 | [0.9382, 0.9786] |
+| `max_cosine` | O(N) | 0.8839 | [0.8532, 0.9129] |
+| `cell_overlap`, binary | O(1) | 0.8311 | [0.8004, 0.8604] |
+
+Paired differences, which resolve far tighter than the overlap of two intervals suggests:
+
+| Comparison | Difference | 95% interval |
+| --- | ---: | --- |
+| graded minus `topk_cosine_sum_48` | **-0.0093** | [-0.0193, -0.0007] |
+| graded minus `max_cosine` | **+0.0861** | [+0.0611, +0.1129] |
+| graded minus binary | **+0.1389** | [+0.1143, +0.1639] |
+
+## What this says
+
+**Accumulation is real.** The baseline itself rises monotonically with `k`, 0.8839 at one item to
+0.9793 at forty-eight. Reading only the best match throws away most of the signal, and that is worth
+0.095 — more than anything else measured in this project.
+
+**Binarising is what broke the fly mechanism here.** The binary filter is the Bloom filter the
+fly-connectome line's phase 37 identified, and it loses 0.1389 to the same filter accumulating
+magnitudes instead of clamping. The saturating mark that *won* on recognition-under-load is the wrong
+rule for this task, because here the question is how strongly the cue is supported, not whether its
+cells were touched.
+
+**By the criterion fixed in advance, this fails.** The graded filter does not beat the best
+accumulating baseline; it loses by 0.0093, and that difference is resolved, if barely.
+
+It fails differently from everything else here, and the difference is worth recording. Phase 31 lost
+by 0.26 and Phase 34 by 0.26, both at comparable cost. This loses by 0.009 while holding a state that
+does not grow with the number of documents, against a reader that must keep every embedding, and it
+beats the natural O(N) gate by 0.086. That is an engineering trade rather than a failed idea — but a
+trade is not the capability claim the criterion asked for, and it is recorded as a loss.
+
+## Interpretation boundary
+
+The filter's shape (8,192 cells, 256 active) is the best of five swept on this same data, so that
+figure is optimistic in exactly the way `topk`'s best `k` is; both sides were tuned the same way and
+on the same pairs. At three seeds the best shape tied the baseline exactly, and at seven the gap
+opened to a resolved 0.0093 — the tie was seed noise, and the seven-seed number is the one to quote.
+Nothing here rescues retrieval: this is a gate, a cheaper job than the one Phase 31 measured, and the
+content store is still beaten by cosine at that.

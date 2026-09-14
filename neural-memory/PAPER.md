@@ -232,6 +232,16 @@ that improves question answering.
 
 ## Next decisive experiments
 
+0. Phase 38 tested a fixed-size familiarity gate, which asks a different question from retrieval:
+   is anything stored that bears on this cue at all? On 200 matched pairs — the same question asked
+   of a store holding its evidence and one with the evidence removed — a graded cell accumulator in
+   O(1) state reaches a 0.9700 win rate against 0.9793 for an O(N) reader that keeps every
+   embedding, a resolved loss of 0.0093, while beating maximum cosine by 0.0861. It fails the
+   criterion fixed in advance and is recorded as a loss, but it is the only mechanism here that
+   comes within a point of its baseline. Two things follow for the design: accumulation across many
+   weak matches is worth 0.095 over reading the single best, and binarising the accumulator — the
+   Bloom-filter rule that won the fly line's recognition test — costs 0.1389 on this one.
+
 1. Establish where an associative store *does* pay, if anywhere. Phase 31 rules out retrieval against
    the same encoder at loads up to 128 sessions, and Phase 34 rules out the in-place update case that
    most favours the write rule: the overwrite is causally real, shown by a write-order reversal that
