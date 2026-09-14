@@ -5,6 +5,7 @@ from typing import Literal
 
 import torch
 from torch import Tensor, nn
+from torch.nn import functional as F
 
 
 RecallMode = Literal["candidate", "query", "joint"]
@@ -439,6 +440,148 @@ class DeferredConsolidationMemory(nn.Module):
         )
         state = self.consolidate(self.write(candidate_features, masks), event, similarity)
         return self.recall(state, query), state
+
+
+@dataclass(frozen=True)
+class AssociativeState:
+    matrix: Tensor
+    eligibility: Tensor
+    values: Tensor
+    write_strengths: Tensor
+    event_gains: Tensor
+
+
+class AssociativeDeferredMemory(nn.Module):
+    """Memory as a changing weight matrix, with no slot selection anywhere.
+
+    Every candidate is written with a graded strength; nothing is discarded and
+    there is no top-k. Capacity is the matrix itself, so what survives is decided
+    by interference and decay rather than by an admission decision. A later event
+    then modulates the still-eligible traces the way a reinforcement pathway does:
+    it never sees the stored content, only how strongly each recent trace responds
+    to it.
+
+    Persistent state is ``memory_dim ** 2`` scalars. Eligibility is transient and
+    is dropped once the event has acted, so it is not part of the stored memory.
+    """
+
+    def __init__(
+        self,
+        feature_dim: int,
+        memory_dim: int = 12,
+        decay: float = 0.99,
+        event_gain_bound: float = 1.0,
+        competitive_gain: bool = True,
+    ) -> None:
+        super().__init__()
+        if feature_dim < 1 or memory_dim < 1:
+            raise ValueError("dimensions must be positive")
+        if not 0.0 < decay <= 1.0:
+            raise ValueError("decay must be inside (0, 1]")
+        self.memory_dim = memory_dim
+        self.event_gain_bound = event_gain_bound
+        self.competitive_gain = competitive_gain
+        self.candidate_key = nn.Linear(feature_dim, memory_dim)
+        self.candidate_value = nn.Linear(feature_dim, memory_dim)
+        self.query_key = nn.Linear(feature_dim, memory_dim)
+        self.event_key = nn.Linear(feature_dim, memory_dim)
+        self.write_strength = nn.Sequential(
+            nn.Linear(memory_dim * 3, memory_dim), nn.GELU(), nn.Linear(memory_dim, 1)
+        )
+        self.decay_logit = nn.Parameter(torch.logit(torch.tensor(decay)))
+        # The modulatory gain reads only how strongly a trace answers the event,
+        # never the trace's content, which is what makes it a separate pathway.
+        self.event_gain = nn.Sequential(
+            nn.Linear(3, memory_dim), nn.GELU(), nn.Linear(memory_dim, 1)
+        )
+        nn.init.zeros_(self.event_gain[-1].weight)
+        nn.init.zeros_(self.event_gain[-1].bias)
+
+    def _views(self, features: Tensor) -> tuple[Tensor, Tensor]:
+        keys = F.normalize(torch.tanh(self.candidate_key(features)), dim=-1)
+        values = F.normalize(torch.tanh(self.candidate_value(features)), dim=-1)
+        return keys, values
+
+    @staticmethod
+    def _read(matrix: Tensor, key: Tensor) -> Tensor:
+        return torch.bmm(matrix, key[..., None]).squeeze(-1)
+
+    def write(self, candidate_features: Tensor, masks: Tensor) -> AssociativeState:
+        if candidate_features.ndim != 3:
+            raise ValueError("candidates must have shape [batch, traces, feature_dim]")
+        if masks.shape != candidate_features.shape[:2]:
+            raise ValueError("masks must match candidate trace axes")
+        keys, values = self._views(candidate_features)
+        batch, traces, _ = candidate_features.shape
+        matrix = candidate_features.new_zeros(batch, self.memory_dim, self.memory_dim)
+        eligibility = candidate_features.new_zeros(
+            batch, traces, self.memory_dim, self.memory_dim
+        )
+        decay = self.decay_logit.sigmoid()
+        strengths: list[Tensor] = []
+        for slot in range(traces):
+            key, value = keys[:, slot], values[:, slot]
+            prediction = self._read(matrix, key)
+            strength = self.write_strength(
+                torch.cat((key, value, value - prediction), dim=-1)
+            ).squeeze(-1).sigmoid()
+            strength = strength * masks[:, slot].to(strength.dtype)
+            delta = (value - prediction)[..., :, None] * key[..., None, :]
+            eligibility[:, slot] = strength[..., None, None] * delta
+            matrix = decay * matrix + eligibility[:, slot]
+            strengths.append(strength)
+        written = torch.stack(strengths, dim=1)
+        return AssociativeState(
+            matrix=matrix,
+            eligibility=eligibility,
+            values=values,
+            write_strengths=written,
+            event_gains=torch.zeros_like(written),
+        )
+
+    def consolidate(self, state: AssociativeState, event: Tensor) -> AssociativeState:
+        """Let a later event strengthen or depress the traces that answer to it."""
+        if event.ndim != 2:
+            raise ValueError("event must have shape [batch, feature_dim]")
+        key = F.normalize(torch.tanh(self.event_key(event)), dim=-1)
+        response = torch.einsum("btij,bj->bti", state.eligibility, key)
+        # Coincidence, not content: a trace is addressed when the event's key
+        # retrieves something aligned with what that trace stored. The signed
+        # alignment is what makes the pathway selective; a magnitude alone cannot
+        # tell an answering trace from a merely large one.
+        alignment = (F.normalize(response, dim=-1) * state.values).sum(dim=-1)
+        summary = torch.stack(
+            (alignment, response.norm(dim=-1), state.write_strengths), dim=-1
+        )
+        gains = self.event_gain_bound * torch.tanh(self.event_gain(summary).squeeze(-1))
+        if self.competitive_gain:
+            # A uniform gain only rescales the matrix, which cannot reorder what
+            # it retrieves, so an unconstrained pathway degenerates to a global
+            # scale and does nothing. Forcing the gains to sum to zero makes
+            # consolidation competitive: strengthening one trace has to come out
+            # of another, which is the allocation rule phase 1 was built on.
+            gains = gains - gains.mean(dim=-1, keepdim=True)
+        matrix = state.matrix + torch.einsum("bt,btij->bij", gains, state.eligibility)
+        return AssociativeState(
+            matrix=matrix,
+            eligibility=state.eligibility,
+            values=state.values,
+            write_strengths=state.write_strengths,
+            event_gains=gains,
+        )
+
+    def recall(self, state: AssociativeState, query: Tensor, candidates: Tensor) -> Tensor:
+        """Score candidates by how well the matrix answers the query with them."""
+        key = F.normalize(torch.tanh(self.query_key(query)), dim=-1)
+        retrieved = self._read(state.matrix, key)
+        _, values = self._views(candidates)
+        return torch.einsum("btd,bd->bt", F.normalize(values, dim=-1), retrieved)
+
+    def forward(
+        self, candidate_features: Tensor, event: Tensor, query: Tensor, masks: Tensor
+    ) -> tuple[Tensor, AssociativeState]:
+        state = self.consolidate(self.write(candidate_features, masks), event)
+        return self.recall(state, query, candidate_features), state
 
 
 class FastWeightRecallMemory(nn.Module):
