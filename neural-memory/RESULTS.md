@@ -2699,3 +2699,66 @@ requires N comparisons against something. The tasks a function-shaped memory can
 are familiarity, which Phase 38 measured to within 0.009 of an O(N) reader, and generation, which
 needs a decoder this project does not have. That is the boundary, and it is where this line of
 questions ends rather than continues.
+
+# Phase 41: the level was the wrong measurement
+
+Every verdict in this project has been a level: does the mechanism beat the baseline at the load it
+was measured at. Applied to backpropagation in 1988 that standard returns "rejected" — a three-layer
+network lost to hand-crafted features on nearly every benchmark it was tried on. What eventually
+separated the two was not the level but the slope: the network kept improving with more data and
+compute while the baseline saturated, and that was visible as a trend long before it was visible as a
+win.
+
+The slope is measurable here, and it has been available all along. Phase 31 already reported one:
+the store's gap to cosine grew from 0.16 at eight documents to 0.35 at a hundred and twenty-eight.
+That is the wrong direction, and it is a stronger reason to abandon that design than any single-load
+comparison was.
+
+Phase 38's filter is the one mechanism whose slope had not been measured, and it is the one whose
+state does not grow with the load. Turn granularity gives 491 items per question against the 48 it
+was first measured on. Same paired design: one memory holds the turn that answers the question, one
+holds a distractor in its place, both hold exactly `load` items.
+
+| Load | max cosine | top-4 sum | top-16 sum | top-64 sum | **Filter, O(1)** |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 16 | 0.9006 | 0.9647 | 0.9679 | 0.9679 | **0.9744** |
+| 64 | 0.7821 | 0.9231 | 0.9679 | 0.9615 | **0.9679** |
+| 128 | 0.7244 | 0.9006 | 0.9647 | 0.9808 | **0.9744** |
+| 256 | 0.6442 | 0.8333 | 0.9359 | 0.9679 | **0.9679** |
+| 491 | 0.5714 | 0.8214 | 0.9107 | 0.9821 | **0.9643** |
+
+**The filter is almost flat.** Thirty times the load costs it 0.0101, from 0.9744 to 0.9643, while
+maximum cosine falls from 0.9006 to 0.5714.
+
+| Filter minus | At load 16 | At load 491 | Direction |
+| --- | ---: | ---: | --- |
+| max cosine | +0.0737 | **+0.3929** | improving |
+| top-4 sum | +0.0096 | **+0.1429** | improving |
+| top-16 sum | +0.0064 | **+0.0536** | improving |
+| top-64 sum | +0.0064 | -0.0179 | worsening |
+
+Against every reader that holds its budget fixed, the fixed-size filter's advantage *grows* with the
+load. The single reader it loses to is the one whose budget grows with N — at 491 items `top-64`
+sums a sixty-fourth of the haystack, and keeping that up means keeping a fixed fraction of everything
+stored, which is the cost the filter exists to avoid.
+
+## What this changes and what it does not
+
+It does not overturn Phases 31, 34 or 39. Those measured a store that carried O(N) state anyway
+(Phase 40), and their slope, where it was measured, ran the wrong way. Nothing here rescues
+retrieval.
+
+It does change what Phase 38 established. Reported as a level, the filter lost by 0.0093 and was
+recorded as a failure against its pre-registered criterion. That verdict stands at that load. But the
+criterion asked the wrong question of a mechanism whose whole claim is constant state, and the slope
+says the comparison it lost was against a baseline that cannot be held to its budget as the load
+grows.
+
+## Interpretation boundary
+
+52 questions, one encoder, three seeds, turn granularity from a crude string match of the gold answer
+into an evidence turn — 48 of 100 sampled questions were dropped because no turn contained the answer
+verbatim, and those may not be a random half. The loads run to 491 because that is one question's
+haystack; nothing here says what happens at 10,000, which is the regime the argument is really about.
+The top-64 row is the honest competitor and it is ahead; the claim is about how each side's cost
+behaves as N grows, not that the filter is more accurate today.
