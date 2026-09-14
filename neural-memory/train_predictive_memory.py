@@ -48,6 +48,7 @@ class PredictiveRead(nn.Module):
         context: int = 1,
         age: bool = False,
         heads: int = 1,
+        mlp: int = 0,
     ) -> None:
         super().__init__()
         if rank < 1 or context < 1 or heads < 1:
@@ -68,6 +69,22 @@ class PredictiveRead(nn.Module):
         weights[0] = 8.0
         self.context_logits = nn.Parameter(weights)
         self.age_weight = nn.Parameter(torch.zeros(1)) if age else None
+        # The cue transform above is low-rank and linear. If what predicts the
+        # future is present in the frozen embedding but not linearly available,
+        # a non-linear residual on both sides will find some of it; if it is not
+        # present at all, this changes nothing and fine-tuning the encoder is the
+        # only remaining move. The last layer starts at zero, so the model still
+        # begins exactly at the cosine baseline.
+        self.cue_mlp = self.memory_mlp = None
+        if mlp:
+            def residual() -> nn.Sequential:
+                block = nn.Sequential(nn.Linear(dim, mlp), nn.GELU(), nn.Linear(mlp, dim))
+                nn.init.zeros_(block[2].weight)
+                nn.init.zeros_(block[2].bias)
+                return block
+
+            self.cue_mlp = residual()
+            self.memory_mlp = residual()
 
     def cue_from(self, recent: Tensor) -> Tensor:
         """Blend the most recent turns, newest first, into one cue."""
@@ -79,6 +96,9 @@ class PredictiveRead(nn.Module):
     def scores(self, memory: Tensor, cue: Tensor) -> Tensor:
         """One row of scores per head; at initialisation every row is the cosine."""
         # I + UV^T, so at initialisation (V = 0) this is exactly memory @ cue.
+        if self.cue_mlp is not None:
+            cue = F.normalize(cue + self.cue_mlp(cue), dim=0)
+            memory = F.normalize(memory + self.memory_mlp(memory), dim=-1)
         shifted = cue + torch.einsum('hdr,hr->hd', self.right, self.left.transpose(1, 2) @ cue)
         scored = shifted @ memory.T
         if self.age_weight is not None:
@@ -122,6 +142,9 @@ def main() -> None:
     parser.add_argument("--age", action="store_true", help="give the scorer an explicit age term")
     parser.add_argument("--heads", type=int, default=1, help="parallel reads blended into one output")
     parser.add_argument(
+        "--mlp", type=int, default=0, help="hidden width of a non-linear residual on both sides"
+    )
+    parser.add_argument(
         "--cue-from-future",
         action="store_true",
         help="cue the read with the target itself, bounding what this read form can reach "
@@ -159,7 +182,7 @@ def main() -> None:
         train_episodes, eval_episodes = order[:cut].tolist(), order[cut:].tolist()
 
         model = PredictiveRead(
-            turns.shape[-1], args.rank, args.context, args.age, args.heads
+            turns.shape[-1], args.rank, args.context, args.age, args.heads, args.mlp
         )
 
         @torch.no_grad()

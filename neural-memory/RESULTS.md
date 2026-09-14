@@ -3171,3 +3171,44 @@ The future-cued number is a ceiling for this read form and this target, not a cl
 system could do. It uses the answer to find the answer. Its only role is to separate "the mechanism
 is too weak" from "the input does not say", and it says the second — which is the question three
 phases of architecture work could not settle.
+
+# Phase 48: more capacity on the same embedding makes it worse
+
+Phase 47 located the limit in the cue, which points at the encoder. Fine-tuning BGE-small needs the
+raw text, which these artifacts deliberately do not keep, and it needs hours. There is a cheaper test
+that decides whether those hours are worth spending: the cue transform so far is low-rank and
+*linear*, so adding a non-linear residual on both the cue and the memory side asks whether what
+predicts the future is present in the frozen embedding but not linearly available. Both residuals end
+in a zero-initialised layer, so the model still starts exactly at the cosine baseline.
+
+Sixteen heads, context 8, 6,000 steps, five seeds:
+
+| Non-linear residual | Top-1, all | Top-1, old | Trained minus hard pick |
+| ---: | ---: | ---: | --- |
+| none (linear) | 0.6150 | **0.2397** | **+0.0311** [+0.0214, +0.0408] |
+| hidden 256 | 0.5775 | 0.2082 | -0.0003 [-0.0106, +0.0100] |
+| hidden 1024 | 0.4881 | 0.1748 | **-0.0338** [-0.0449, -0.0217] |
+
+Capacity makes it monotonically worse, and at hidden 1024 the trained read is *below* an untrained
+hard pick by a resolved margin. This is overfitting, and it answers the question the test was built
+to answer: there is nothing extra in the frozen embedding for more capacity to reach. What extra
+capacity finds is the training conversations.
+
+## What that says about fine-tuning the encoder
+
+It does not say fine-tuning would fail. It says the obstacle is not representational capacity but
+data, and fine-tuning adds far more capacity than these residuals did. 233 conversations produce
+115,007 turns, which sounds like a large sample and is not one: positions inside a conversation share
+its whole history, so the effective sample size is nearer 233 than 115,007. An encoder trained on
+that will find the same thing hidden 1024 found.
+
+This is the shape of nearly every wall in this project. 52 questions in Phase 45, 30 abstention
+questions in Phase 38, 233 conversations here. The mechanisms have been cheap to test and the
+measurements have been the expensive part, and what ran out each time was data rather than ideas.
+
+## Interpretation boundary
+
+One objective, one encoder, one corpus, and no attempt at the regularisation that might let a larger
+model survive this sample — weight decay is at its default and nothing was tuned per configuration.
+A better-regularised non-linear read could plausibly land between 0.2397 and 0.2082. What the result
+rules out is the hope that capacity alone was the missing piece, which is what Phase 47 left open.
