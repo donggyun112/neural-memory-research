@@ -1222,3 +1222,79 @@ mechanism costs about 0.29 against a rule with the same inputs. Any further work
 schedules optimises the smaller term. The larger one is the relation head, and the fact that exposing
 one untransformed scalar recovers 0.0882 of it suggests the frozen projections, not the objective,
 are where the information is lost.
+
+# Phase 18: the training procedure was erasing the signal
+
+Date: 2026-09-14
+
+Phase 17 ended with the learned consolidation head about 0.29 retention behind a cosine rule holding
+the same inputs. Scoring residually makes that gap measurable rather than inferred: the head's output
+layer is zero-initialised and the encoder similarity is added directly to the logit, so an untrained
+model reproduces the cosine ranking exactly. A test pins that property.
+
+The untrained model scores 0.9342. After the usual 600 write, 600 consolidation, and 600 recall
+steps it scores 0.6491. **Training destroys 0.285 retention.**
+
+## Localising the damage
+
+The first explanation was that encoder cosines are all positive, so the residual makes every
+candidate score high and a binary objective forces the head to learn a large negative offset that
+takes the ranking with it. Both repairs for that failed. Centring the similarity per episode, which
+is rank-preserving and leaves the untrained model unchanged, gives 0.6246. Replacing the binary
+objective with a listwise softmax, which is invariant to a constant offset by construction, gives
+0.6105. Neither helps and both are slightly worse, so the offset explanation is wrong.
+
+Enabling one training stage at a time localises it instead:
+
+| Write | Consolidation | Recall | Retention |
+| ---: | ---: | ---: | ---: |
+| 0 | 0 | 0 | 0.9342 |
+| 600 | 0 | 0 | 0.9342 |
+| 0 | 0 | 600 | 0.9342 |
+| 0 | 600 | 0 | 0.8772 |
+| **600** | **600** | 0 | **0.6096** |
+
+Write training alone is harmless and recall training alone is harmless. Consolidation alone costs
+0.057. The two together cost 0.325, far more than their sum. Write training reshapes
+`candidate_projection` around write-worthiness, and a consolidation head reading those reshaped
+traces learns a correction large enough to bury the similarity term it was supposed to refine. The
+interaction, not either stage, is the fault.
+
+## Bounding the correction
+
+Passing the head's output through a scaled tanh keeps the similarity in charge and leaves the head
+able only to adjust. The bound matters sharply:
+
+| Correction bound | 0.25 | **0.5** | 1.0 | 2.0 | 4.0 | unbounded |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Retention | 0.9298 | **0.9474** | 0.9123 | 0.8246 | 0.7763 | 0.6491 |
+
+Five-seed results at a bound of 0.5, against a 0.9342 training-free cosine reference:
+
+| Variant | Retention | Top-1 |
+| --- | ---: | ---: |
+| **Full deferral, residual** | **0.9500 +/- 0.0059** | **0.4816** |
+| Full deferral, shuffled event | 0.5421 +/- 0.0138 | 0.3298 |
+| Deferred at four of eight, residual | 0.8132 +/- 0.0094 | 0.4605 |
+
+Training now adds to the signal instead of erasing it: 0.9500 is above the cosine rule the model
+starts from, and top-1 rises from 0.3526 before the fix to 0.4816. The shuffled control collapses to
+0.5421, so the result stays attributable to the correct event rather than to the residual structure.
+
+At four-of-eight provisional capacity the write stage leaves 0.8307 and consolidation converts
+0.8132 of it, or 97.9 percent, against 78.6 percent before the fix. The consolidation stage is
+therefore close to exhausted and the binding constraint returns to the write gate, which is where
+Phase 13 and 15 located it on the other corpora.
+
+## Interpretation boundary
+
+This is a fix to a training procedure, not evidence about memory. The lesson generalises only as far
+as the setup: when a later stage reads representations that an earlier stage optimised for a
+different objective, an unbounded correction can erase a good prior, and that failure is invisible
+unless the architecture is arranged so the untrained model has a measurable baseline. The residual
+formulation earns its place mainly by making the loss observable.
+
+It also does not rescue the Phase 17 premise. The write-time discard still costs little, the later
+event is still as informative as the query, and the corpus still has no deferral window. What changed
+is that the learned layer now matches and slightly exceeds a training-free rule with the same inputs,
+which it previously could not do.
