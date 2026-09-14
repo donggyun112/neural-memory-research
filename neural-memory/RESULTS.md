@@ -2093,6 +2093,43 @@ discreteness, which the graded gate could not do, and the rule it converges to i
 fitting two points of the Phase 27 sweep already produced. Learning does not improve on that rule; it
 confirms it.
 
+## Training the remaining constants, and overturning the Phase 29 ablation
+
+The parallel store and the tags were removed from the trained model because Phase 29's ablation found
+them worthless: removing the slow store *improved* the mean by 0.0132 and the tags were worth 0.0007.
+Both were tested at the values that phase set by hand. Restoring them as trainable quantities asks a
+different question — whether they are useless, or were merely sized wrong.
+
+They were sized wrong. Ten seeds, three thousand steps, every constant starting where Phase 29 put it:
+
+| Constant | Start | Learned | Deviation |
+| --- | ---: | ---: | ---: |
+| Slow-store strength | 0.250 | **0.4790** | 0.0104 |
+| Slow-store decay | 0.990 | **0.9995** | 0.0000 |
+| Tag decay | 0.900 | **0.9964** | 0.0003 |
+| Capture rate | 0.250 | **0.9445** | 0.0051 |
+
+Every one moves *up*, none is switched off, and the seed deviations are between 0.0000 and 0.0104 —
+ten independent runs land in the same place. Held-out discrimination gains 0.0739 +/- 0.0189, against
+0.0487 for the model without these components.
+
+The capture rate is the clearest case: 0.25 to 0.9445 means the hand-set value was nearly four times
+too small, so the modulatory pathway had almost no authority in the ablation. Its measured
+contribution of 0.0007 was not a dead component but a component held shut.
+
+The two decay constants both run to the edge, 0.9995 and 0.9964, which is the same answer Phases 21
+and 27 reached by sweeping and by an adaptive rule: in an error-correcting store, forgetting does not
+help. That is now three independent routes to it, the third one arrived at by gradient descent
+without being told.
+
+## What this says about ablation
+
+A hand ablation answers whether a component helps *at the setting it was given*. It cannot separate a
+component that does nothing from one that was configured not to. Phase 29 read the second as the
+first for both the tags and the slow store, and the error was invisible until the constants were
+allowed to move. Its three positive findings — sparsity, adaptive sparsity, and not decaying — stand,
+and are strengthened, since decay is exactly what training also refuses.
+
 ## Interpretation boundary
 
 Only the projections and the logit scale are learned. The width rule stays a hand-fitted top-k, for

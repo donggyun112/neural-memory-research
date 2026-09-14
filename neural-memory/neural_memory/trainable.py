@@ -94,6 +94,7 @@ class TrainableMemory(nn.Module):
         fixed_active: int = 32,
         learned_width: bool = False,
         sampled_width: bool = False,
+        full_components: bool = False,
     ) -> None:
         super().__init__()
         if feature_dim < 1 or key_dim < 1 or value_dim < 1:
@@ -121,6 +122,14 @@ class TrainableMemory(nn.Module):
         self.width_offset = nn.Parameter(torch.tensor(0.061))
         self.width_slope = nn.Parameter(torch.tensor(-0.012))
         self.width_temperature = nn.Parameter(torch.tensor(0.004))
+        # The components the Phase 29 ablation removed by hand, restored as
+        # trainable quantities so the optimiser can decide their size instead.
+        # All start where that phase set them.
+        self.full_components = full_components
+        self.slow_logit = nn.Parameter(torch.tensor(0.25).logit())
+        self.slow_decay_logit = nn.Parameter(torch.tensor(0.99).logit())
+        self.tag_decay_logit = nn.Parameter(torch.tensor(0.9).logit())
+        self.capture_logit = nn.Parameter(torch.tensor(0.25).logit())
 
     def _active(self, matrix: Tensor) -> int:
         if not self.adaptive:
@@ -132,17 +141,25 @@ class TrainableMemory(nn.Module):
         wanted = round(self.base_active * size**self.active_exponent)
         return int(min(self.highest_active, max(self.lowest_active, wanted)))
 
-    def forward(self, block: Tensor) -> Tensor:
-        """Store a set of documents and score every probe against every value."""
+    def forward(self, block: Tensor, weak_first: float = 1.0) -> Tensor:
+        """Store a set of documents and score every probe against every value.
+
+        With the full component set the first document is written weakly, leaving
+        a tag, and a reinforcement addressed at it follows the writes. That gives
+        the tag decay and the capture rate something to act on, so the optimiser
+        can size them rather than have them sized by hand.
+        """
         if block.ndim != 2:
             raise ValueError("block must have shape [documents, features]")
         projected = torch.tanh(self.key_projection(block))
         values = F.normalize(torch.tanh(self.value_projection(block)), dim=-1)
         matrix = values.new_zeros(values.shape[-1], projected.shape[-1])
+        slow = values.new_zeros(values.shape[-1], projected.shape[-1])
         keys = []
+        tags: list[Tensor] = []
         self._last_widths: list[float] = []
         self._last_log_probabilities: list[Tensor] = []
-        for row, value in zip(projected, values, strict=True):
+        for index, (row, value) in enumerate(zip(projected, values, strict=True)):
             if self.sampled_width:
                 width, log_probability = self.width_policy.sample(
                     float(matrix.detach().norm())
@@ -159,12 +176,29 @@ class TrainableMemory(nn.Module):
                 key = hard_sparse(row, self._active(matrix))
                 self._last_widths.append(float((key != 0).sum()))
             keys.append(key)
-            matrix = matrix + torch.outer(value - matrix @ key, key)
-        reads = F.normalize(torch.stack(keys) @ matrix.T, dim=-1)
+            full = torch.outer(value - matrix @ key, key)
+            strength = weak_first if (self.full_components and index == 0) else 1.0
+            matrix = matrix + strength * full
+            if self.full_components:
+                tag_decay = self.tag_decay_logit.sigmoid()
+                tags = [tag * tag_decay for tag in tags]
+                if strength < 1.0:
+                    tags.append((1.0 - strength) * full)
+                slow = self.slow_decay_logit.sigmoid() * slow + (
+                    self.slow_logit.sigmoid() * torch.outer(value - slow @ key, key)
+                )
+        if self.full_components and tags:
+            stacked = torch.stack(tags)
+            response = torch.einsum('tij,j->ti', stacked, keys[0])
+            current = response.norm(dim=1)
+            gain = self.capture_logit.sigmoid() * current * (1.0 - current)
+            matrix = matrix + torch.einsum('t,tij->ij', gain, stacked)
+        state = matrix + slow if self.full_components else matrix
+        reads = F.normalize(torch.stack(keys) @ state.T, dim=-1)
         return reads @ values.T * self.log_scale.exp().clamp(max=100.0)
 
     @torch.no_grad()
-    def discrimination(self, block: Tensor) -> float:
+    def discrimination(self, block: Tensor, weak_first: float = 1.0) -> float:
         """Fraction of documents whose probe returns their own value first."""
-        logits = self.forward(block)
+        logits = self.forward(block, weak_first)
         return float((logits.argmax(dim=-1) == torch.arange(len(block))).float().mean())
