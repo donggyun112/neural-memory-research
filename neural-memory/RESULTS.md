@@ -2620,3 +2620,82 @@ annotation, so +0.1376 is the ceiling for a *single* expansion step and says not
 several would buy. The store was given untrained random projections, matching Phase 31's setting;
 training moved that measurement by +0.14 and closed none of a 0.26 gap, so it is not expected to
 close 0.22 here, but it was not run.
+
+# Phase 40: the store was never fixed-size, and storing in the function has a hard boundary
+
+Two things were assumed rather than checked for twenty phases, and both are wrong.
+
+## The associative store carried O(N) state all along
+
+`TrainableMemory._score` is two lines:
+
+```python
+reads = F.normalize(keys @ state.T, dim=-1)
+return reads @ values.T * self.log_scale.exp()
+```
+
+Scoring needs `values`, which is one row per stored document. The state that was supposed to be a
+fixed-size associative matrix cannot be read without the list of everything written into it. So every
+comparison from Phase 31 onward was an O(N) store losing to an O(N) cosine — not a smaller state
+bought at some accuracy cost, just a worse reader at the same cost. That reframes those results: they
+were never a trade.
+
+The one mechanism here that *is* fixed-size is Phase 38's familiarity filter, and it is also the one
+that came within 0.009 of its baseline. The pattern is consistent.
+
+## A network stores by changing what it computes, and that has a dimension budget
+
+The alternative is to put the memory in the function rather than in a list beside it. The minimal
+version has a closed form and no hyperparameter: fit a linear map to pass the stored items through
+unchanged, and the least-squares solution is the orthogonal projector onto their span,
+`W = S(SᵀS)⁺Sᵀ`. Once `W` exists the items can be discarded — it is d-by-d whatever N was — and
+reading is `Wq`, the part of the cue the stored material can account for.
+
+**It has a boundary that is arithmetic, not empirical.** `rank(W) = min(N, d)`. Below the embedding
+dimension the map is a genuine bottleneck; at or above it, the span is the whole space, `W` is the
+identity, and the memory stores nothing at all. With 384-dimensional embeddings:
+
+- eight sessions per episode: `W` is rank 8, a severe bottleneck
+- 491 turns per episode, the granularity where an answer actually fits in one vector: `W = I`
+
+So this form of storage is only a memory in the regime where it discards most of the input, and stops
+being one exactly where there is enough material to be worth remembering.
+
+## And the endpoint that would have measured it does not work
+
+Testing `Wq` needs a task that does not rank a list, since ranking requires the list. The natural one
+is to ask whether the read lands on the episode's own answer embedding, scored against all 300. The
+gate says no:
+
+| Reader | State at read | Top-1 |
+| --- | --- | ---: |
+| The bare question | none | **0.2367** |
+| Question plus the annotated evidence session | O(N) | 0.2167 |
+| The annotated evidence session | O(N) | 0.1000 |
+| Best similarity-weighted list | O(N) | 0.0900 |
+| `Wq` | O(1) | 0.0867 |
+
+Chance is 0.0033, so the bare question at 0.2367 is doing real work — and that is the problem.
+BGE-small places a short question and its short answer in the same neighbourhood, while a session
+embedding averages ten thousand characters in which the answer is a sentence. Handing the reader the
+*correct* evidence session makes it worse than handing it nothing. `endpoint_usable` is false and no
+row in that table is readable, which is the check Phase 15 did not make about its own numbers.
+
+The diagnosis generalises: at session granularity the answer is not recoverable from the embedding at
+all. That is the same reason the generator endpoint failed in Phase 33, and it is a fact about the
+representation rather than about any architecture built on top of it.
+
+## What this leaves
+
+Turn-granularity features were built to remove the dilution — `prepare_longmemeval_turns.py`, 52
+questions whose gold answer can be located verbatim in an evidence turn, 25,552 turns, 491 per
+question. At that granularity the answer does fit in one vector. It is also the granularity at which
+`W` becomes the identity, so the closed-form version of storing-in-the-function has nothing to say
+there, and a bottlenecked variant (a rank-r sketch) would be compression of the list rather than
+removal of it: O(Nr) instead of O(Nd).
+
+**List-free retrieval appears to be impossible in principle, not merely unachieved.** Ranking N items
+requires N comparisons against something. The tasks a function-shaped memory can do without a list
+are familiarity, which Phase 38 measured to within 0.009 of an O(N) reader, and generation, which
+needs a decoder this project does not have. That is the boundary, and it is where this line of
+questions ends rather than continues.
