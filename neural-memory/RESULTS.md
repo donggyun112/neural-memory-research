@@ -2810,14 +2810,36 @@ comparisons, so no fixed-size state can do it.
 
 ## Interpretation boundary
 
-The threat to this result is what scales. Each question's own turns stay in both memories, so
-everything added between 491 and 25,000 comes from *other people's conversations* — semantically
-distant material. A sum over cells absorbs distant noise better than a top-k does, which may be the
-entire effect. The setting this claims to speak to is one person with 25,000 of their own turns, where
-the added material would be near rather than far, and no corpus here can construct that. Until it is
-measured on near distractors, the result should be read as: **against distant clutter, a fixed-size
-accumulator degrades far more slowly than any fixed-budget list reader** — which is a narrower claim
-than the table looks like.
+Fifty-two questions means 0.08 is four of them. The intervals are resolved, and they are resolved on
+fifty-two paired observations, not fifty-two thousand.
 
-Fifty-two questions also means 0.0769 is four of them. The interval is resolved, and it is resolved
-on fifty-two paired observations, not fifty-two thousand.
+## The clutter objection, tested
+
+The obvious threat was what scales. Each question's own turns stay in both memories, so everything
+added comes from other conversations — semantically distant material, and a sum over cells might
+simply absorb distant noise better than a top-k does. Filling instead with the turns *nearest* the
+cue tests that directly.
+
+Two versions of this test were wrong before one was right, and both errors showed up in the numbers
+rather than in the reasoning. Taking the stand-in for the answering turn from the end of the fill made
+it farther away as the fill grew, so load and difficulty moved together and every reader improved
+with load. Making the stand-in the cue's nearest neighbour sent every win rate below 0.5, because it
+asked whether the answer is the nearest turn rather than whether the memory holds it. The stand-in has
+to be drawn at random and independently of the fill, so that only the clutter varies.
+
+| Load | Distant clutter: top-256 / filter | Near clutter: top-256 / filter |
+| ---: | ---: | ---: |
+| 491 | 0.9861 / 0.9722 | 0.9861 / 0.9861 |
+| 2,000 | 0.9872 / 0.9744 | 0.9006 / 0.9808 |
+| 8,000 | 0.9455 / 0.9872 | 0.9038 / 0.9744 |
+| 25,000 | 0.9038 / **0.9872** | 0.9038 / **0.9936** |
+
+At 25,000 items the filter leads top-256 by +0.0833 [+0.0385, +0.1346] against distant clutter and by
++0.0897 [+0.0417, +0.1442] against near clutter; both resolved, and the near case is if anything
+slightly better. **The objection does not hold.** The advantage is not an artefact of easy noise.
+
+One nuance the table makes visible. Under near fill the list readers are load-invariant by
+construction — the k nearest turns are already present at the smallest load, so adding farther ones
+cannot change a top-k sum — and their values are identical from 2,000 onward. So against near clutter
+the filter's advantage is a constant +0.09 rather than a growing one; the growth in the earlier table
+belongs to the distant-clutter case.

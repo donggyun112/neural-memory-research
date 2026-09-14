@@ -50,6 +50,12 @@ def main() -> None:
     parser.add_argument("--active", type=int, default=256)
     parser.add_argument("--loads", default="491,2000,8000,25000")
     parser.add_argument("--topk", default="16,64,256")
+    parser.add_argument(
+        "--fill",
+        choices=("random", "nearest"),
+        default="random",
+        help="random draws distant clutter; nearest fills with the turns most like the cue",
+    )
     parser.add_argument("--seeds", default="7,17,27")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
@@ -85,9 +91,24 @@ def main() -> None:
                 # so the distractors that actually resemble the answer are never
                 # the ones being scaled away.
                 outside = np.setdiff1d(np.arange(len(turns)), own)
-                fill = generator.choice(outside, size=load - len(own) + 1, replace=False)
-                positive = np.concatenate([own, fill[:-1]])
-                negative = np.concatenate([own[own != target], fill])
+                # What stands in for the answering turn is drawn at random and
+                # does not depend on the load or the fill mode, so the swap is
+                # equally hard everywhere and only the clutter around it varies.
+                # Two earlier versions got this wrong: one took the stand-in from
+                # the end of the fill, which made it easier as the fill grew, and
+                # one made it the cue's nearest neighbour, which made the test
+                # ask whether the answer is the nearest turn rather than whether
+                # the memory holds it.
+                swap = int(generator.choice(outside))
+                rest = outside[outside != swap]
+                wanted = load - len(own)
+                if args.fill == "nearest":
+                    closeness = turns[rest] @ queries[index]
+                    fill = rest[np.argsort(-closeness)[:wanted]]
+                else:
+                    fill = generator.choice(rest, size=wanted, replace=False)
+                positive = np.concatenate([own, fill])
+                negative = np.concatenate([own[own != target], [swap], fill])
                 cue = queries[index]
                 cue_mark = np.zeros(args.cells)
                 cue_mark[cue_indices[index]] = cue_values[index]
