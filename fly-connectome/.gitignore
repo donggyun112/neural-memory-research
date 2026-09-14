@@ -1,0 +1,10 @@
+# Connectome downloads, fetched images and the environment are all reproducible
+# from the fetch_*.py scripts and pyproject.toml, and together run to over a
+# gigabyte, so only source and results text are tracked.
+.venv/
+__pycache__/
+.pytest_cache/
+data/
+data_ammc/
+data_optic/
+images_cache/

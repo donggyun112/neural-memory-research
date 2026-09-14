@@ -1,0 +1,23 @@
+[project]
+name = "keymem-fly-connectome-experiment"
+version = "0.1.0"
+description = "Independent line: run the real Drosophila mushroom body connectome as a stimulus-processing network for text"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+  "neuprint-python>=0.5,<1",
+  "numpy>=2.1",
+  "scipy>=1.13",
+  "pandas>=2.2",
+  "pyarrow>=18",
+  "sentence-transformers>=5.6,<6",
+  "pillow>=11,<12",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
