@@ -14,13 +14,17 @@ from train_revisit_write_recall import write_supervision_loss
 
 
 VARIANTS = {
-    # provisional_ratio, event mode, frozen-encoder similarity feature
-    "single_stage": (0.25, "correct", False),
-    "deferred": (0.50, "correct", False),
-    "deferred_shuffled_event": (0.50, "shuffled", False),
-    "deferred_blank_event": (0.50, "blank", False),
-    "deferred_similarity": (0.50, "correct", True),
-    "deferred_similarity_shuffled": (0.50, "shuffled", True),
+    # provisional_ratio, event mode, how stage two reaches encoder similarity
+    "single_stage": (0.25, "correct", "none"),
+    "deferred": (0.50, "correct", "none"),
+    "deferred_shuffled_event": (0.50, "shuffled", "none"),
+    "deferred_blank_event": (0.50, "blank", "none"),
+    "deferred_similarity": (0.50, "correct", "feature"),
+    "deferred_similarity_shuffled": (0.50, "shuffled", "feature"),
+    "deferred_residual": (0.50, "correct", "residual"),
+    "deferred_residual_shuffled": (0.50, "shuffled", "residual"),
+    "full_deferral_residual": (1.00, "correct", "residual"),
+    "full_deferral_residual_shuffled": (1.00, "shuffled", "residual"),
 }
 
 
@@ -29,8 +33,8 @@ def resolve_variants(
     ratios: str,
     modes: str,
     keep_ratio: float,
-    similarity_feature: bool = False,
-) -> dict[str, tuple[float, str, bool]]:
+    similarity: str = "none",
+) -> dict[str, tuple[float, str, str]]:
     """Named variants by default, or a provisional-capacity sweep when asked.
 
     The sweep traces the axis between deciding at write time and deciding once
@@ -42,7 +46,7 @@ def resolve_variants(
         if unknown:
             raise ValueError(f"unknown variants {unknown}; available: {sorted(VARIANTS)}")
         return {name: VARIANTS[name] for name in names.split(",")}
-    resolved: dict[str, tuple[float, str, bool]] = {}
+    resolved: dict[str, tuple[float, str, str]] = {}
     for ratio in ratios.split(","):
         value = float(ratio)
         if not keep_ratio <= value <= 1.0:
@@ -50,7 +54,7 @@ def resolve_variants(
                 f"provisional ratio {value} must lie between keep_ratio {keep_ratio} and 1.0"
             )
         for mode in modes.split(","):
-            resolved[f"provisional{value:g}_{mode}"] = (value, mode, similarity_feature)
+            resolved[f"provisional{value:g}_{mode}"] = (value, mode, similarity)
     return resolved
 
 
@@ -84,7 +88,7 @@ def train_fold(
     *,
     provisional_ratio: float,
     keep_ratio: float,
-    similarity_feature: bool,
+    similarity: str,
     memory_dim: int,
     write_steps: int,
     consolidation_steps: int,
@@ -96,15 +100,16 @@ def train_fold(
 ) -> DeferredConsolidationMemory:
     torch.manual_seed(seed)
     model = DeferredConsolidationMemory(
-        candidates.shape[-1], memory_dim, provisional_ratio, keep_ratio, similarity_feature
+        candidates.shape[-1], memory_dim, provisional_ratio, keep_ratio, similarity
     ).to(device)
     masks = torch.ones(candidates.shape[:2], dtype=torch.bool, device=device)
-    similarity = (
-        model.encoder_similarity(candidates, event) if similarity_feature else None
+    encoder_similarity = (
+        model.encoder_similarity(candidates, event) if similarity != "none" else None
     )
 
     def similarity_for(rows: Tensor) -> Tensor | None:
-        return None if similarity is None else similarity[rows]
+        return None if encoder_similarity is None else encoder_similarity[rows]
+
     teacher = F.one_hot(targets, num_classes=candidates.shape[1]).bool()
     generator = torch.Generator(device=device).manual_seed(seed + 1)
 
@@ -187,7 +192,7 @@ def predict(
     # set: this separates a weak second stage from a weak first one.
     similarity = model.encoder_similarity(candidates, event)
     consolidated = model.consolidate(
-        state, event, similarity if model.similarity_feature else None
+        state, event, similarity if model.similarity != "none" else None
     )
     logits = model.recall(consolidated, query)
     ceiling = torch.zeros_like(provisional)
@@ -212,9 +217,10 @@ def main() -> None:
     )
     parser.add_argument("--event-modes", default="correct,shuffled")
     parser.add_argument(
-        "--similarity-feature",
-        action="store_true",
-        help="give the swept variants the frozen-encoder candidate/event similarity",
+        "--similarity",
+        choices=("none", "feature", "residual"),
+        default="none",
+        help="how the swept variants reach the frozen-encoder candidate/event similarity",
     )
     parser.add_argument(
         "--types",
@@ -300,9 +306,9 @@ def main() -> None:
         args.provisional_ratios,
         args.event_modes,
         args.keep_ratio,
-        args.similarity_feature,
+        args.similarity,
     )
-    for name, (provisional_ratio, event_mode, similarity_feature) in plan.items():
+    for name, (provisional_ratio, event_mode, similarity_mode) in plan.items():
         event = event_tensor(consolidation, event_mode)
         rows: list[dict[str, float]] = []
         for seed in seeds:
@@ -321,7 +327,7 @@ def main() -> None:
                     targets[train].to(device),
                     provisional_ratio=provisional_ratio,
                     keep_ratio=args.keep_ratio,
-                    similarity_feature=similarity_feature,
+                    similarity=similarity_mode,
                     memory_dim=args.memory_dim,
                     write_steps=args.write_steps,
                     consolidation_steps=args.consolidation_steps,

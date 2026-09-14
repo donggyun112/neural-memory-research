@@ -8,6 +8,7 @@ from torch import Tensor, nn
 
 
 RecallMode = Literal["candidate", "query", "joint"]
+SimilarityMode = Literal["none", "feature", "residual"]
 
 
 @dataclass(frozen=True)
@@ -286,20 +287,25 @@ class DeferredConsolidationMemory(nn.Module):
         memory_dim: int = 64,
         provisional_ratio: float = 0.5,
         keep_ratio: float = 0.25,
-        similarity_feature: bool = False,
+        similarity: SimilarityMode = "none",
     ) -> None:
         super().__init__()
         if feature_dim < 1 or memory_dim < 1:
             raise ValueError("dimensions must be positive")
         if not 0.0 < keep_ratio <= provisional_ratio <= 1.0:
             raise ValueError("ratios must satisfy 0 < keep_ratio <= provisional_ratio <= 1")
+        if similarity not in ("none", "feature", "residual"):
+            raise ValueError(f"unknown similarity mode: {similarity}")
         self.provisional_ratio = provisional_ratio
         self.keep_ratio = keep_ratio
         # The write stage trains candidate_projection for write-worthiness and
         # then freezes it, so a trace may no longer carry what stage two needs to
-        # match the later event. This optionally hands stage two the untouched
-        # frozen-encoder similarity instead of making it rediscover one.
-        self.similarity_feature = similarity_feature
+        # match the later event. Both non-default modes hand stage two the
+        # untouched frozen-encoder similarity instead of making it rediscover
+        # one; they differ in how hard that signal is to reach. As one input of
+        # 4*memory_dim+1 a scalar starts out negligible, which "residual" avoids
+        # by scoring with it directly and letting the head learn a correction.
+        self.similarity = similarity
         self.candidate_projection = nn.Linear(feature_dim, memory_dim)
         self.event_projection = nn.Linear(feature_dim, memory_dim)
         self.recall_projection = nn.Linear(feature_dim, memory_dim)
@@ -307,13 +313,21 @@ class DeferredConsolidationMemory(nn.Module):
             nn.Linear(memory_dim, memory_dim), nn.GELU(), nn.Linear(memory_dim, 1)
         )
         self.consolidation_head = nn.Sequential(
-            nn.Linear(memory_dim * 4 + int(similarity_feature), memory_dim),
+            nn.Linear(memory_dim * 4 + int(similarity == "feature"), memory_dim),
             nn.GELU(),
             nn.Linear(memory_dim, 1),
         )
         self.recall_head = nn.Sequential(
             nn.Linear(memory_dim * 4, memory_dim), nn.GELU(), nn.Linear(memory_dim, 1)
         )
+        # Cosine gaps between a matching and a non-matching candidate are about
+        # 0.25, so the scale converts them into a usable logit margin. Starting
+        # the head at zero makes the untrained model exactly the cosine rule,
+        # which is the baseline it previously failed to reach.
+        self.similarity_scale = nn.Parameter(torch.tensor(8.0))
+        if similarity == "residual":
+            nn.init.zeros_(self.consolidation_head[-1].weight)
+            nn.init.zeros_(self.consolidation_head[-1].bias)
 
     @staticmethod
     def _relation(left: Tensor, right: Tensor) -> Tensor:
@@ -347,11 +361,13 @@ class DeferredConsolidationMemory(nn.Module):
         if event.ndim != 2:
             raise ValueError("event must have shape [batch, feature_dim]")
         relation = self._paired(state.traces, event, self.event_projection)
-        if self.similarity_feature:
-            if similarity is None:
-                raise ValueError("this model was built to consume a similarity feature")
+        if self.similarity != "none" and similarity is None:
+            raise ValueError("this model was built to consume a similarity feature")
+        if self.similarity == "feature":
             relation = torch.cat((relation, similarity[..., None]), dim=-1)
         logits = self.consolidation_head(relation).squeeze(-1)
+        if self.similarity == "residual":
+            logits = logits + self.similarity_scale * similarity
         ratio = self.keep_ratio / self.provisional_ratio
         selected, strengths = hard_top_k(logits, state.provisional, ratio)
         combined = state.strengths * strengths
@@ -384,7 +400,7 @@ class DeferredConsolidationMemory(nn.Module):
     ) -> tuple[Tensor, DeferredTraceState]:
         similarity = (
             self.encoder_similarity(candidate_features, event)
-            if self.similarity_feature
+            if self.similarity != "none"
             else None
         )
         state = self.consolidate(self.write(candidate_features, masks), event, similarity)

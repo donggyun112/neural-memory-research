@@ -60,23 +60,37 @@ def test_ratios_must_be_ordered() -> None:
         DeferredConsolidationMemory(16, 8, provisional_ratio=0.25, keep_ratio=0.5)
 
 
-def test_similarity_feature_is_required_once_declared() -> None:
-    model = DeferredConsolidationMemory(16, 8, similarity_feature=True)
-    state = model.write(torch.randn(2, 8, 16), torch.ones(2, 8, dtype=torch.bool))
+def test_similarity_is_required_once_declared() -> None:
+    for mode in ("feature", "residual"):
+        model = DeferredConsolidationMemory(16, 8, similarity=mode)
+        state = model.write(torch.randn(2, 8, 16), torch.ones(2, 8, dtype=torch.bool))
+        with pytest.raises(ValueError):
+            model.consolidate(state, torch.randn(2, 16))
+
+
+def test_unknown_similarity_mode_is_rejected() -> None:
     with pytest.raises(ValueError):
-        model.consolidate(state, torch.randn(2, 16))
+        DeferredConsolidationMemory(16, 8, similarity="cosine")
 
 
-def test_similarity_feature_changes_the_consolidation_decision() -> None:
+def test_feature_mode_widens_the_head_while_residual_does_not() -> None:
+    plain = DeferredConsolidationMemory(16, 8, similarity="none")
+    feature = DeferredConsolidationMemory(16, 8, similarity="feature")
+    residual = DeferredConsolidationMemory(16, 8, similarity="residual")
+    assert feature.consolidation_head[0].in_features == plain.consolidation_head[0].in_features + 1
+    assert residual.consolidation_head[0].in_features == plain.consolidation_head[0].in_features
+
+
+def test_residual_mode_starts_as_the_cosine_rule() -> None:
     torch.manual_seed(11)
+    model = DeferredConsolidationMemory(16, 8, provisional_ratio=1.0, keep_ratio=0.25,
+                                        similarity="residual")
     candidates = torch.randn(6, 8, 16)
     event = torch.randn(6, 16)
-    plain = DeferredConsolidationMemory(16, 8, similarity_feature=False)
-    enriched = DeferredConsolidationMemory(16, 8, similarity_feature=True)
-    similarity = enriched.encoder_similarity(candidates, event)
-    assert similarity.shape == (6, 8)
-    masks = torch.ones(6, 8, dtype=torch.bool)
-    plain_out = plain.consolidate(plain.write(candidates, masks), event)
-    rich_out = enriched.consolidate(enriched.write(candidates, masks), event, similarity)
-    assert plain_out.selected.shape == rich_out.selected.shape
-    assert enriched.consolidation_head[0].in_features == plain.consolidation_head[0].in_features + 1
+    similarity = model.encoder_similarity(candidates, event)
+    state = model.write(candidates, torch.ones(6, 8, dtype=torch.bool))
+    consolidated = model.consolidate(state, event, similarity)
+    # The head is zero-initialised, so the untrained model ranks purely by cosine.
+    expected = similarity.topk(2, dim=1).indices.sort(dim=1).values
+    actual = consolidated.consolidation_logits.topk(2, dim=1).indices.sort(dim=1).values
+    assert torch.equal(actual, expected)

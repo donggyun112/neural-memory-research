@@ -24,16 +24,16 @@ def test_unknown_named_variant_is_rejected() -> None:
 def test_sweep_crosses_capacities_with_event_modes() -> None:
     plan = resolve_variants("", "0.25,0.5", "correct,shuffled", 0.25)
     assert plan == {
-        "provisional0.25_correct": (0.25, "correct", False),
-        "provisional0.25_shuffled": (0.25, "shuffled", False),
-        "provisional0.5_correct": (0.5, "correct", False),
-        "provisional0.5_shuffled": (0.5, "shuffled", False),
+        "provisional0.25_correct": (0.25, "correct", "none"),
+        "provisional0.25_shuffled": (0.25, "shuffled", "none"),
+        "provisional0.5_correct": (0.5, "correct", "none"),
+        "provisional0.5_shuffled": (0.5, "shuffled", "none"),
     }
 
 
-def test_sweep_can_enable_the_similarity_feature() -> None:
-    plan = resolve_variants("", "0.5", "correct", 0.25, similarity_feature=True)
-    assert plan == {"provisional0.5_correct": (0.5, "correct", True)}
+def test_sweep_can_select_a_similarity_mode() -> None:
+    plan = resolve_variants("", "0.5", "correct", 0.25, similarity="residual")
+    assert plan == {"provisional0.5_correct": (0.5, "correct", "residual")}
 
 
 def test_sweep_rejects_a_capacity_below_the_final_one() -> None:
