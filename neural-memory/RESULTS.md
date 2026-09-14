@@ -3115,3 +3115,59 @@ Phase 45's 0.143. Widening the read by these two routes moved it by about 0.008,
 limitation is not the cue or the recency handle. What has not been tried is giving the read more than
 one output — every configuration here surfaces one blended vector, and the target it is scored
 against is a five-turn centroid that may simply not be reachable from any single read.
+
+# Phase 47: the read is nowhere near its limit; the cue is
+
+A single softmax is either sharp, returning one stored item, or flat, returning the mean of
+everything. The target is a centroid of five turns, so several distinct items may be needed at once.
+Heads give the read that, with the output still one vector so every baseline stays comparable.
+
+| Heads, context 8 | Top-1, all | Top-1, old | Trained minus hard pick |
+| ---: | ---: | ---: | --- |
+| 1 | 0.6042 | 0.2341 | +0.0256 [+0.0165, +0.0341] |
+| 2 | 0.6055 | 0.2321 | +0.0235 [+0.0147, +0.0326] |
+| 4 | 0.6123 | 0.2364 | +0.0279 [+0.0188, +0.0370] |
+| 8 | 0.6129 | 0.2358 | +0.0273 [+0.0179, +0.0364] |
+| 16 | 0.6140 | **0.2391** | +0.0306 [+0.0217, +0.0397] |
+
+Sixteen times the heads buys +0.005 on the positions that matter, and every interval overlaps every
+other. Three routes to a wider read have now been tried and all three are worth about nothing there:
+cue width +0.008, an age handle negative, output multiplicity +0.005.
+
+## What the read can do when it is told what to look for
+
+Phase 19 settled an equivalent question by fitting an unconstrained model to bound what was
+extractable. The equivalent here is one flag: cue the same read with the target itself. That does not
+produce a usable system — it needs the future — but it bounds what this read form can reach when the
+information it lacks is handed to it.
+
+| Condition, old positions | Top-1 |
+| --- | ---: |
+| Real cue, sixteen heads, context 8 | 0.2391 |
+| Best single item in memory | 0.3697 |
+| **Same read, cued by the future** | **0.6581** |
+
+The read form is not the constraint. Given the right cue it reaches 0.658, nearly three times what it
+manages with the real one and well past the single-item oracle — which also confirms that blending
+beats picking when there is something to steer it with. Every point of the gap is the cue.
+
+**This is Phase 19's finding in a new setting.** There, the write gate could not exceed about 0.54
+because what to keep is not determined at write time. Here, the read cannot exceed about 0.24 because
+which stored item will matter is not determined by the current turn. Same shape, opposite end of the
+system, reached by a different route and a different target.
+
+## What that leaves
+
+The honest reading is that this line is now at the same wall from both sides, and the wall is the
+representation rather than the mechanism. The current turn, encoded by BGE-small, does not carry
+which old thing is about to become relevant. Three things could move it and none is a modelling
+choice: a cue that spans more than turns (the conversation's state rather than its last utterances), an
+encoder that was trained for this rather than for sentence similarity, or a target closer to
+usefulness than a five-turn centroid.
+
+## Interpretation boundary
+
+The future-cued number is a ceiling for this read form and this target, not a claim about what any
+system could do. It uses the answer to find the answer. Its only role is to separate "the mechanism
+is too weak" from "the input does not say", and it says the second — which is the question three
+phases of architecture work could not settle.
