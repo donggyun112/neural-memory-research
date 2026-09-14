@@ -141,8 +141,22 @@ class TrainableMemory(nn.Module):
         wanted = round(self.base_active * size**self.active_exponent)
         return int(min(self.highest_active, max(self.lowest_active, wanted)))
 
-    def forward(self, block: Tensor, weak_first: float = 1.0) -> Tensor:
-        """Store a set of documents and score every probe against every value.
+    def _sparsify(self, row: Tensor, matrix: Tensor) -> tuple[Tensor, float]:
+        """Code one projected row at the width the current state calls for."""
+        if self.sampled_width:
+            width, log_probability = self.width_policy.sample(float(matrix.detach().norm()))
+            self._last_log_probabilities.append(log_probability)
+            return hard_sparse(row, width), float(width)
+        if self.learned_width:
+            size = torch.tensor(max(float(matrix.detach().norm()), 1.0))
+            threshold = self.width_offset + self.width_slope * size.log()
+            key, gate = soft_sparse(row, threshold, self.width_temperature)
+            return key, float(gate.detach().sum())
+        key = hard_sparse(row, self._active(matrix))
+        return key, float((key != 0).sum())
+
+    def store(self, block: Tensor, weak_first: float = 1.0) -> tuple[Tensor, Tensor, Tensor]:
+        """Write a set of documents and return the state, its keys and its values.
 
         With the full component set the first document is written weakly, leaving
         a tag, and a reinforcement addressed at it follows the writes. That gives
@@ -160,21 +174,8 @@ class TrainableMemory(nn.Module):
         self._last_widths: list[float] = []
         self._last_log_probabilities: list[Tensor] = []
         for index, (row, value) in enumerate(zip(projected, values, strict=True)):
-            if self.sampled_width:
-                width, log_probability = self.width_policy.sample(
-                    float(matrix.detach().norm())
-                )
-                self._last_log_probabilities.append(log_probability)
-                key = hard_sparse(row, width)
-                self._last_widths.append(float(width))
-            elif self.learned_width:
-                size = torch.tensor(max(float(matrix.detach().norm()), 1.0))
-                threshold = self.width_offset + self.width_slope * size.log()
-                key, gate = soft_sparse(row, threshold, self.width_temperature)
-                self._last_widths.append(float(gate.detach().sum()))
-            else:
-                key = hard_sparse(row, self._active(matrix))
-                self._last_widths.append(float((key != 0).sum()))
+            key, width = self._sparsify(row, matrix)
+            self._last_widths.append(width)
             keys.append(key)
             full = torch.outer(value - matrix @ key, key)
             strength = weak_first if (self.full_components and index == 0) else 1.0
@@ -194,8 +195,31 @@ class TrainableMemory(nn.Module):
             gain = self.capture_logit.sigmoid() * current * (1.0 - current)
             matrix = matrix + torch.einsum('t,tij->ij', gain, stacked)
         state = matrix + slow if self.full_components else matrix
-        reads = F.normalize(torch.stack(keys) @ state.T, dim=-1)
+        return state, torch.stack(keys), values
+
+    def _score(self, state: Tensor, keys: Tensor, values: Tensor) -> Tensor:
+        reads = F.normalize(keys @ state.T, dim=-1)
         return reads @ values.T * self.log_scale.exp().clamp(max=100.0)
+
+    def forward(self, block: Tensor, weak_first: float = 1.0) -> Tensor:
+        """Store a set of documents and score every document's own probe."""
+        state, keys, values = self.store(block, weak_first)
+        return self._score(state, keys, values)
+
+    def probe(self, block: Tensor, probes: Tensor, weak_first: float = 1.0) -> Tensor:
+        """Store a set of documents and read the state with a separate cue.
+
+        The discrimination task asks each document to return itself, which a
+        store can satisfy without ever being useful. The real task arrives as a
+        question that was never written, so the cue has to be projected through
+        the same key path and coded against the state it is about to address.
+        """
+        if probes.ndim != 2:
+            raise ValueError("probes must have shape [probes, features]")
+        state, _, values = self.store(block, weak_first)
+        projected = torch.tanh(self.key_projection(probes))
+        keys = torch.stack([self._sparsify(row, state)[0] for row in projected])
+        return self._score(state, keys, values)
 
     @torch.no_grad()
     def discrimination(self, block: Tensor, weak_first: float = 1.0) -> float:

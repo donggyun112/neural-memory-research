@@ -57,6 +57,29 @@ def test_training_reduces_the_loss_it_is_given() -> None:
     assert float(F.cross_entropy(model(block), target)) < first
 
 
+def test_a_probe_reads_the_store_with_a_cue_that_was_never_written() -> None:
+    torch.manual_seed(3)
+    model = TrainableMemory(16, key_dim=64, value_dim=8, adaptive=False, fixed_active=8)
+    block = F.normalize(torch.randn(6, 16), dim=1)
+    logits = model.probe(block, F.normalize(torch.randn(2, 16), dim=1))
+    assert logits.shape == (2, 6)
+
+
+def test_probing_with_a_stored_document_matches_its_own_row() -> None:
+    torch.manual_seed(3)
+    model = TrainableMemory(16, key_dim=64, value_dim=8, adaptive=False, fixed_active=8)
+    block = F.normalize(torch.randn(6, 16), dim=1)
+    # The cue path has to be the same key path the write used, so a document
+    # handed back as its own cue must land where it was written.
+    assert torch.allclose(model.probe(block, block), model(block), atol=1e-5)
+
+
+def test_probes_must_be_a_matrix() -> None:
+    model = TrainableMemory(16, key_dim=64, value_dim=8)
+    with pytest.raises(ValueError):
+        model.probe(F.normalize(torch.randn(4, 16), dim=1), torch.randn(16))
+
+
 def test_adaptive_width_grows_with_the_state() -> None:
     torch.manual_seed(3)
     model = TrainableMemory(16, key_dim=256, value_dim=8)

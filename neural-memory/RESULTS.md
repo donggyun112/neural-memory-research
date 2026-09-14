@@ -2141,3 +2141,95 @@ The absolute numbers are also not comparable with Phase 29's. Episodes here are 
 that is a fraction of the corpus, so the nearest-neighbour sets are less alike and the task is
 easier: untrained discrimination is 0.89 here against 0.74 in the ablation at the same load. Only the
 gains within this phase should be read.
+
+# Phase 31: the real task, and what the proxy was hiding
+
+Every phase since the redesign has been scored on discrimination: store a set of documents, probe with
+each document's own key, and count how often the store returns that document's value ahead of the
+others. Phase 30 pushed that to 0.9513 held out. The benchmark never asks that question. It asks a
+question that was never written down, and expects the session holding the answer.
+
+`eval_question_retrieval.py` closes the gap. The artifact already carries the question embedding, so
+the only thing missing was a read path for a cue that is not a stored key: `TrainableMemory.probe`
+projects the question through the same key projection, codes it against the state it is about to
+address, and scores the read against the stored values. Training uses the same objective the task
+does — cross-entropy of the question's read against the evidence slot — on a disjoint set of
+questions.
+
+## The store loses to doing nothing
+
+Three hundred questions, eight candidate sessions each, seventy/thirty split, five seeds:
+
+| Reader | Held-out hit rate | Top-2 |
+| --- | ---: | ---: |
+| Chance | 0.1250 | 0.2500 |
+| Untrained store | 0.4200 +/- 0.0215 | — |
+| Trained store | 0.5578 +/- 0.0347 | 0.7689 +/- 0.0163 |
+| Trained key projection, nothing written | 0.8178 +/- 0.0401 | 0.9333 +/- 0.0365 |
+| **Cosine on the frozen encoder** | **0.8622 +/- 0.0295** | **0.9356 +/- 0.0147** |
+
+Training helps the store by 0.1378 and never comes close to closing the 0.30 gap to a plain dot
+product against the same embeddings. The projection-only control is the one that matters: writing the
+sessions down costs 0.26 against reading them with the very projection the store was trained to use.
+The store is not adding retrieval; it is destroying it.
+
+Twelve thousand steps instead of three thousand gives 0.5741 +/- 0.0105 — this is not the
+undertraining that Phase 30 turned out to be. The full component set (weak first write, tags,
+capture, parallel store) gives 0.5422 +/- 0.0514, no better.
+
+## It is not the sparsity
+
+The obvious suspect was the sparse code: a question's active units may simply miss the evidence
+session's. Measured directly, they do not. Sweeping the width at three seeds:
+
+| Code width | Cue/evidence unit overlap | Hit rate | Top-2 |
+| ---: | ---: | ---: | ---: |
+| 8 | 0.501 | 0.5704 | 0.7333 |
+| 32 | 0.522 | 0.5926 | 0.7630 |
+| 128 | 0.519 | 0.6296 | 0.8259 |
+| 256 | 0.578 | 0.6704 | 0.8370 |
+| 512 (dense) | 1.000 | 0.6259 | 0.8481 |
+
+Half the cue's units already land on the evidence session at width 8, and at width 512 the code is
+dense, the overlap is total by construction, and the store still reads 0.63 against cosine's 0.86.
+Widening the value bottleneck does not rescue it either: 32/64/128/256/384 give 0.6481, 0.6704,
+0.7074, 0.6778, 0.6852. The best configuration found anywhere in these sweeps is width 256 with a
+128-dimensional value, at 0.7074 — still 0.15 behind doing nothing.
+
+## The load argument does not survive either
+
+The defence for a compressive store is that eight sessions is too small to show its worth: a linear
+scan is cheap at eight and expensive at eight thousand. Padding each question's set with sessions
+drawn from other questions tests that directly, at the best configuration above:
+
+| Sessions | Chance | Cosine | Store | Cosine top-2 | Store top-2 |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 8 | 0.1250 | 0.8630 | 0.7037 +/- 0.0532 | 0.9370 | 0.8630 +/- 0.0319 |
+| 32 | 0.0312 | 0.6815 | 0.2778 +/- 0.0327 | 0.7926 | 0.4852 +/- 0.0105 |
+| 64 | 0.0156 | 0.6037 | 0.2926 +/- 0.0457 | 0.7519 | 0.4370 +/- 0.0500 |
+| 128 | 0.0078 | 0.5370 | 0.1852 +/- 0.0292 | 0.6630 | 0.3259 +/- 0.0604 |
+
+The gap widens with load rather than closing: 0.16 behind at eight sessions, 0.35 behind at a hundred
+and twenty-eight. Both readers degrade, but the store degrades faster, which is the opposite of the
+regime the design was defended by.
+
+## What the proxy was measuring
+
+Discrimination asks a stored key to return its own value. A delta-rule store is fitted to satisfy
+exactly that, one equation per document, and sparsening the keys makes the equations more nearly
+independent — which is why every redesign measurement that improved discrimination did so, and why
+Phase 30's constants all ran toward preserving what was written. None of that produces generalisation
+from a cue that was never written. The retrieval the benchmark asks for lives in the encoder's
+geometry, and a write-read round trip through a rank-limited matrix can only lose some of it.
+
+This does not retract the redesign measurements. Sparse coding really does raise discrimination, the
+advantage really is larger for similar documents, decay really does not help, and the constants
+really were sized wrong. Those statements were about the store's ability to hold what it was given,
+and they stand. What does not follow, and what this project assumed for twelve phases, is that a
+store which holds documents well is a store that answers questions well.
+
+## Boundary
+
+Measured on LongMemEval-S deferred episodes with BGE-small-en-v1.5 embeddings, at the retrieval step
+only. The cosine baseline is the same frozen encoder the store reads from, so this is a claim about
+what the store adds to that encoder, not a claim about retrieval methods in general.

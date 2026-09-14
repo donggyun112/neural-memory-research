@@ -29,10 +29,19 @@ def main() -> None:
     episodes = list(iter_longmemeval_deferred(args.input, candidates=args.candidates))
     if not episodes:
         raise RuntimeError("no multi-evidence episodes were produced")
+    if any(not episode.answer.strip() for episode in episodes):
+        raise RuntimeError("every deferred episode needs a gold answer")
+    # The answer is encoded so a memory can be asked to produce what the question
+    # needs, rather than to point at which session held it.
     texts = [
         text
         for episode in episodes
-        for text in (*episode.candidates, episode.consolidation, episode.question)
+        for text in (
+            *episode.candidates,
+            episode.consolidation,
+            episode.question,
+            episode.answer,
+        )
     ]
     encoder = SentenceTransformer(args.model, device=args.device)
     encoded = encoder.encode(
@@ -43,16 +52,14 @@ def main() -> None:
         show_progress_bar=False,
     ).cpu()
 
-    stride = args.candidates + 2
+    stride = args.candidates + 3
+    rows = range(len(episodes))
     candidates = torch.stack(
-        [encoded[index * stride : index * stride + args.candidates] for index in range(len(episodes))]
+        [encoded[index * stride : index * stride + args.candidates] for index in rows]
     )
-    consolidation = torch.stack(
-        [encoded[index * stride + args.candidates] for index in range(len(episodes))]
-    )
-    query = torch.stack(
-        [encoded[index * stride + args.candidates + 1] for index in range(len(episodes))]
-    )
+    consolidation = torch.stack([encoded[index * stride + args.candidates] for index in rows])
+    query = torch.stack([encoded[index * stride + args.candidates + 1] for index in rows])
+    answer = torch.stack([encoded[index * stride + args.candidates + 2] for index in rows])
     types = sorted({episode.question_type for episode in episodes})
     output = {
         "source": "LongMemEval-S cleaned, multi-evidence",
@@ -60,6 +67,7 @@ def main() -> None:
         "candidates": candidates,
         "consolidation": consolidation,
         "query": query,
+        "answer": answer,
         "targets": torch.tensor([episode.target_offset for episode in episodes], dtype=torch.long),
         # Candidate lengths travel with the features so the training-free length
         # baseline never needs the raw corpus again.
