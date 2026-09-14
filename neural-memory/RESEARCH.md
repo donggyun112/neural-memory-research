@@ -187,3 +187,118 @@ setting, not learned write gating as such.
   parameters is not stated in the abstract and was not verified.
 
 All arXiv identifiers in this survey were checked against the listing pages on 2026-09-14.
+
+# Redesign, 2026-09-14
+
+## Why the previous design has to be abandoned
+
+Phases 12 to 19 asked a bounded layer to pick which of eight candidates a later query would need.
+Every result in that line collapsed to the same thing once controlled. On the deferred corpus an
+untrained random projection of the same width already reaches 0.4033 top-1 with no matrix and no
+learning; the trained associative model reaches 0.4956; a blank event scores 0.4956 against 0.4971
+for the correct one; and four different write policies land between 0.4825 and 0.5000. The slot
+model's large event effect came from feeding cosine-to-event in as a residual score rather than from
+anything the memory computed.
+
+The cause is the task shape. Presenting the candidates at recall time lets encoder cosine stand in
+for memory, and cosine is better at it than any bounded state we can train. Two further points
+sharpen this. Importance is not utility, so scoring a write decision against a future-utility oracle
+measures the wrong thing by construction. And memory is gist-preserving and detail-losing, so a
+metric rewarding exact reconstruction of a stored embedding rewards verbatim storage, which is not
+what memory does.
+
+None of the survey's findings are about choosing from a candidate list. Every one of them is about
+how a bounded memory degrades: transience as a function, decay adapting to interference, compartment
+time constants, sparsening that helps only for similar items. The experiments must measure that
+instead.
+
+## What the survey licenses, as constraints
+
+1. **The write signal must not read content.** Dopaminergic neurons carry reinforcement, not odour
+   identity, and sign comes from the modulatory channel alone. Write strength may depend on the
+   memory's own prediction error or on an external outcome, never on a judgement about the content.
+2. **Modulation must work with the item absent.** A second activation minutes after training, with
+   no odour present, nearly abolishes the response. Consolidation therefore acts on an eligibility
+   trace addressed by coincidence, not by re-presenting the item.
+3. **Stores run in parallel with different time constants and are read as a sum.** Compartments do
+   not promote into one another; γ1pedc holds one item and is gone by 24 h while α1 is weak
+   immediately and durable later, and the expressed answer flips as the fast store decays.
+4. **Codes are sparse and expanded, and sparsening matters only for similar items.** Fifty inputs
+   fan out to two thousand cells with 5 to 10 percent active, and removing the inhibition impairs
+   discrimination of similar but not dissimilar odours.
+5. **Forgetting is active and its rate adapts to interference.** Decay is a trained dynamic, not a
+   constant, and encoding strength, decay rate, and retrieval threshold stay three separate knobs.
+6. **Allocation is competitive under a roughly fixed budget.** Potentiated inputs are preferentially
+   recruited while the recall-active population stays about constant, so strengthening one trace
+   should cost others rather than being free.
+7. **What is allocated depends on current excitability, which decays over hours.** Items encountered
+   close together are therefore biased onto shared substrate, which predicts linking between them and
+   not only interference.
+8. **A weak trace can be rescued later, inside a window.** Tagging and capture give a weak event
+   access to plasticity a later strong event supplies, classically under three hours. The window is
+   finite, which is the part the corpora could not show us.
+9. **Consolidation continues offline and selectively.** Replay is biased by reward and keeps working
+   across sleep, so retention can improve with no new input.
+10. **Reading a memory changes it.** Retrieval returns a trace to a labile state before it
+    restabilises, so recall is not a passive operation on the state.
+
+## The replacement task
+
+Store N documents in a bounded state, probe with a cue, and measure what comes back. No candidate
+list exists at recall, so similarity between the cue and the stored items cannot substitute for the
+memory. The state is the only thing carried from write to read.
+
+Two scores per probe, because the survey says surface and gist should not be treated alike:
+
+- **gist recovery** — agreement between what is recalled and the fact the document carried;
+- **surface recovery** — agreement between what is recalled and the document's own form.
+
+A memory that behaves like the literature describes should lose surface faster than gist as load
+rises. A verbatim store loses both together; a retriever loses neither until it fails entirely.
+
+## Measurements, one per mechanism the survey established
+
+Every row names the finding it comes from, the prediction that follows, and what would falsify it.
+Elapsed time in the animal work maps onto intervening writes here, since interference rather than
+the clock is what the state actually experiences.
+
+| # | From | Measurement | Prediction | Fails if |
+| --- | --- | --- | --- | --- |
+| 1 | Transience is functional (Richards & Frankland 2017); decay adapts to interference (Altmann & Gray 2002) | Fidelity against number of documents stored, at fixed state size | Graceful degradation, and a trained decay beats a fixed one only as load rises | Flat, or a cliff, or trained decay never separates from fixed |
+| 2 | Sparse expansion and APL inhibition; removing it impairs similar but not dissimilar odours (Lin et al. 2014) | The same curve for sparse expanded codes against dense low-dimensional ones, run separately on similar and dissimilar document sets | Sparse degrades more slowly, and the gap appears only for similar documents | Sparsity helps uniformly, or not at all |
+| 3 | Memory is gist-preserving and detail-losing | Gist against surface recovery across the same load | Surface decays first | Both decay together |
+| 4 | Compartments run in parallel with their own decay and capacity; expressed valence flips as the fast one fades (Aso & Rubin 2016) | Two stores with different decay read as a sum, probed after varying numbers of intervening writes | What is expressed changes with delay, and one store cannot reproduce the curve | A single store matches the two-store readout |
+| 5 | Competitive allocation under limited plasticity; total engram population roughly constant (Jeong et al. 2021) | Whether strengthening one trace measurably costs others, at fixed state size | Gains and losses trade off; forcing that trade-off helps rather than hurts | Traces strengthen independently, or the constraint only hurts |
+| 6 | Excitability biases allocation and decays over hours (Josselyn & Frankland 2015) | Whether documents written close together share substrate | Items written adjacently are recalled together more than distant ones, a linking effect distinct from interference | No difference between adjacent and distant pairs |
+| 7 | Synaptic tagging and capture: a weak tag is rescued by a later strong event inside a window (Frey & Morris 1997) | Write an item weakly, apply a strong unrelated event after k intervening writes, measure rescue against k | Rescue falls off with k, giving the deferral window the corpora could not supply | Rescue is flat in k, or absent |
+| 8 | Replay selection is biased by reward and consolidates offline (eLife 2015; Nat Commun 2026) | An offline phase that re-applies stored eligibility with no new input | Selected traces retain better than unselected ones after the same load | Offline replay changes nothing |
+| 9 | Retrieval returns a trace to a labile state (Nader et al. 2000) | Probe an item, then re-write, and measure drift | Recalled items drift, and repeated recall compounds it | The state is unchanged by being read |
+| 10 | The dopaminergic write signal never reads content, and a second activation with the item absent abolishes the response (Aso & Rubin 2016) | A modulatory signal applied after writing, with the item absent | Recall changes, and a mismatched signal does not produce that change | The signal is inert, as it was in every attempt today |
+
+Order matters. Measurement 2 runs first: it is the sharpest circuit-derived prediction available, it
+fails in a specific direction, and nothing in this project depends on it yet. Measurements 1 and 3
+come with it, since they share the load curve. Measurement 7 is the one worth the most, because it
+recovers the deferral window that LongMemEval-S could not show — there the later event stayed equally
+informative at every distance, whereas here the delay is ours to set. Measurement 10 has already
+failed twice in this project and should not be attempted again until 1 to 3 establish that the memory
+holds anything at all.
+
+Three of these are marked contested above and must be reported as tests of a disputed claim rather
+than as confirmations: 5 rests mainly on Jeong et al., 9 has a direct failed replication, and 4 sits
+against the older sequential-consolidation model.
+
+## What has to be built
+
+Controlled document sets rather than found episodes, because measurements 1 and 2 need the number of
+stored items and the similarity between them as independent variables. LongMemEval sessions supply
+the documents and their facts; grouping them by encoder similarity supplies the similarity axis. The
+teacher disappears entirely: the objective is reconstruction of what was stored from its own cue, so
+no label about which document will matter later enters training at any point.
+
+## What this design deliberately gives up
+
+It stops asking whether the layer can predict future utility, which Phase 19 measured as
+information-limited anyway, and it stops competing with retrieval on retrieval's own ground. If the
+memory cannot beat cosine at picking a candidate, that is no longer a finding about the memory. The
+claim available at the end of this program is narrower and about capacity: how much a bounded state
+holds, how it fails, and whether it fails the way the biology says it should.
