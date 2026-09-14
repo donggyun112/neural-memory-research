@@ -1359,3 +1359,80 @@ The ceiling is measured under one teacher and one frozen encoder. A different no
 or a representation carrying information BGE-small discards, could move it. The claim is not that
 write-time prediction is impossible in general, only that on these corpora with this supervision the
 gate has extracted what is available, so further architecture work on stage one is unjustified.
+
+# Phase 20: sparse expansion, under the redesigned protocol
+
+Date: 2026-09-14
+
+`RESEARCH.md` records why the phase 12 to 19 task had to be abandoned: presenting candidates at
+recall lets encoder cosine stand in for memory, and every result in that line reduced to it. The
+replacement stores documents in a bounded state, probes with a cue, and never shows a candidate list.
+This is the first measurement from that protocol, and the one the survey makes the sharpest
+prediction about.
+
+## Setup
+
+Documents are the 2,400 LongMemEval session embeddings. A similar set is the nearest neighbours of a
+seed document; a dissimilar set is grown greedily to spread them apart. Keys and values are random
+projections, there is no training anywhere, and storage is the plain delta rule, so the only thing
+degrading a read is interference.
+
+The three arms hold the comparison honest. Sparse expansion buys substrate, which is not free, so
+matching total scalars would define the effect away. Matching the plasticity spent per write is the
+biologically meaningful constraint, and it is what competition under limited plasticity bounds.
+
+| Arm | Key width | Active units | Substrate | Plasticity per write |
+| --- | ---: | ---: | ---: | ---: |
+| Dense, small | 32 | 32 | 2,048 | 2,048 |
+| Dense, large | 512 | 512 | 32,768 | 32,768 |
+| **Sparse, large** | 512 | **32** | 32,768 | **2,048** |
+
+Comparing sparse against dense-large separates sparsity from substrate size, since those two arms
+differ only in how much of the substrate each write touches.
+
+## The metric had to be corrected first
+
+The obvious score is fidelity: the cosine between what the state returns for a document's own key
+and what was written there. On that score the sparse advantage looked *larger* for dissimilar
+documents, 0.0626 against 0.0480 at load 64, which points the opposite way to the prediction and
+would have been reported as a falsification.
+
+It was the wrong score. The sparsening result is about discrimination — removing inhibition impairs
+telling similar odours apart — and fidelity never asks whether a read could be confused with another
+stored document. Scoring instead on whether a read is closer to its own value than to any other
+stored value answers the prediction as stated.
+
+## Result
+
+Discrimination, forty episodes at each load, three seeds:
+
+| Condition | 2 | 4 | 8 | 16 | 32 | 64 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Similar, dense small | 0.4750 | 0.2604 | 0.1729 | 0.1224 | 0.1346 | 0.1618 |
+| Similar, dense large | 0.4667 | 0.2562 | 0.1656 | 0.1484 | 0.2344 | 0.4270 |
+| **Similar, sparse large** | **0.7958** | **0.7792** | **0.7250** | **0.7417** | **0.7701** | **0.7996** |
+| Sparse advantage, similar | +0.3292 | +0.5229 | +0.5594 | +0.5932 | +0.5357 | +0.3727 |
+| Dissimilar, dense small | 0.9750 | 0.9042 | 0.7646 | 0.6453 | 0.5188 | 0.3458 |
+| Dissimilar, dense large | 1.0000 | 1.0000 | 0.9969 | 0.9880 | 0.9747 | 0.9819 |
+| Dissimilar, sparse large | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 0.9999 |
+| Sparse advantage, dissimilar | 0.0000 | 0.0000 | +0.0031 | +0.0120 | +0.0253 | +0.0180 |
+
+The prediction holds and holds sharply. Sparse expansion is worth between 0.33 and 0.59
+discrimination on similar documents and between 0.000 and 0.025 on dissimilar ones, a difference of
+roughly thirty to sixty times, while spending sixteen times less plasticity per write than the dense
+arm it beats. Dense-large and dense-small are nearly identical on similar sets, so the effect is
+sparsity rather than substrate.
+
+## Interpretation boundary
+
+This is a property of the code, not of a trained memory. Nothing here learns, so it says what a
+sparse expanded representation makes possible, not that a trained layer will exploit it. The
+documents are real session embeddings but the similarity axis is constructed by nearest-neighbour
+selection, which produces sets more uniformly alike than naturally co-occurring sessions would be.
+And the result transfers a Drosophila olfactory finding to text embeddings by analogy; the agreement
+is evidence that the mechanism generalises, not that the circuits correspond.
+
+The immediate consequence for this project is concrete. Every memory built in phases 12 to 19 used a
+dense low-dimensional code, 12 to 128 units with everything active, which is the arm that cannot tell
+similar documents apart. That is a plausible contributor to why those layers never exceeded encoder
+cosine, and it is now a specific thing to change rather than a guess.
