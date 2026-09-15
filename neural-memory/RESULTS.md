@@ -4279,3 +4279,57 @@ and the true gap to outcome retrieval is somewhat larger than the point estimate
 the negative conclusion safer, not weaker. Everything is still 272 failures on one corpus with no
 training anywhere, so this rules out a hand-built similarity-weighted signal rather than the idea that
 a learned one could work.
+
+# Phase 68: at a real sample size the effect is four times larger, and it does not transfer
+
+Every corpus used until now was one person's logs. Phase 49 established that the independent unit is
+the project and there were on the order of a dozen, and Phase 51 tested the data hypothesis by
+doubling 233 conversations to 470 and found it wanting. Doubling was too small a test.
+
+`local-data/open-swe-v1.jsonl` had been on disk since the start of this project: 5,000 public agent
+trajectories from **1,326 distinct repositories**, 416,541 tool calls, licence-filtered. Taking 1,200
+streams of at least 64 actions gives 124,291 actions — ten times the Claude stream and from
+independent sources rather than one user. Foils are clean at the exact-duplicate level, 0.04 above
+0.99 against Codex's 49.87, though 22 of 99 sit above 0.9, so everything below uses the clean-foil
+setting.
+
+| Setting | Trained minus blend | Blend minus hard | Trained minus hard | Positions |
+| --- | --- | --- | --- | ---: |
+| **Trained on Open-SWE, evaluated on it** | **+0.1029** [+0.0981, +0.1075] | +0.0165 | **+0.1194** [+0.1145, +0.1241] | 52,414 |
+| Trained on LongMemEval, evaluated on Open-SWE | **+0.0014** [+0.0007, +0.0022] | +0.0169 | +0.0184 | 174,587 |
+
+**The in-domain effect is four times anything measured before** — +0.1194 against LongMemEval's best
+of +0.0296 — and the composition inverts. In every earlier phase the blend did most of the work and
+training added a little; here training is worth +0.1029 against the blend's +0.0165, six times more.
+
+**And it does not transfer.** The same architecture trained on LongMemEval contributes +0.0014 on
+Open-SWE, seventy-three times less than training on Open-SWE itself. The blend transfers fine, +0.0169,
+because it is not learned.
+
+## What this settles
+
+- Phase 48 and 49 were right that data was the binding constraint, and Phase 51's retraction of that
+  was premature: 233 to 470 conversations is not a test of a data hypothesis, 1,200 independent
+  streams is.
+- The transfer question, open since Phase 54 and reversed twice, now has an answer at 174,587
+  positions: **the learned part is domain-specific.** Train on the stream you will run on.
+- Every small number in Phases 44 through 67 — the +0.008s and +0.03s — was measured on a sample too
+  small and too correlated to show what the method does. The method was never the limit.
+
+## What it does not settle
+
+The target is still the proxy: rank a five-action future centroid among ninety-nine foils. Phases 65
+to 67 found that the signals predicting a *real* outcome need no retrieval at all, and nothing here
+changes that. A large gain on the proxy and no gain on the outcome remain simultaneously true, and
+which one matters is the question this project has never answered.
+
+The ceiling is also still far away: 0.5720 against 0.8754 for the best single item in memory, so
+seven tenths of what is available is still unclaimed even in-domain.
+
+## Interpretation boundary
+
+One encoder, five seeds, 1,200 of 5,000 available trajectories, and `resolved` is 1 on every row
+because the downloader filtered to successes — so this corpus carries no task-level outcome contrast
+and cannot address the Phase 65 question. Failure flags came out as zero for it, a bug in the
+tool-result matching rather than a property of the data. Held-out is by stream within one dataset;
+transfer *to* LongMemEval was not measured, so "domain-specific" is shown in one direction.

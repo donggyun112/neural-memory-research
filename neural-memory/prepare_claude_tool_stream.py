@@ -99,6 +99,55 @@ def codex_streams(root: Path, minimum: int, limit: int) -> tuple[list[list[str]]
     return streams, failures
 
 
+def open_swe_streams(
+    path: Path, minimum: int, limit: int
+) -> tuple[list[list[str]], list[list[int]]]:
+    """Action streams from Open-SWE trajectories: 1,326 repositories, not one user.
+
+    Every corpus used so far was one person's logs, and Phase 49 established that
+    the independent unit is the project rather than the session. These are public
+    agent traces across many repositories, which is the only corpus here whose
+    sample size is not a handful.
+    """
+    streams, failures = [], []
+    with path.open() as handle:
+        for line in handle:
+            if limit and len(streams) >= limit:
+                break
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            actions, failed, pending = [], [], {}
+            for message in row.get("messages") or []:
+                if not isinstance(message, dict):
+                    continue
+                for call in message.get("tool_calls") or []:
+                    if not isinstance(call, dict):
+                        continue
+                    function = call.get("function") or {}
+                    name = str(function.get("name") or call.get("name") or "unknown")
+                    actions.append(render_codex(name, function.get("arguments")))
+                    failed.append(0)
+                    identifier = call.get("id")
+                    if isinstance(identifier, str):
+                        pending[identifier] = len(actions) - 1
+                if message.get("role") == "tool":
+                    slot = pending.pop(str(message.get("tool_call_id")), None)
+                    if slot is None:
+                        continue
+                    text = str(message.get("content") or "")[:2000].lower()
+                    # No structured error flag here either, so failure is read
+                    # off the output and used only as a descriptive count.
+                    failed[slot] = int(
+                        any(mark in text for mark in ("error", "traceback", "no such file"))
+                    )
+            if len(actions) >= minimum:
+                streams.append(actions)
+                failures.append(failed)
+    return streams, failures
+
+
 def session_streams(root: Path, minimum: int) -> tuple[list[list[str]], list[list[int]]]:
     """Ordered action text per session, with a flag for actions that failed."""
     streams, failures = [], []
@@ -150,7 +199,9 @@ def main() -> None:
         "--output", type=Path, default=Path("artifacts/claude_tool_stream.pt")
     )
     parser.add_argument("--model", default="BAAI/bge-small-en-v1.5")
-    parser.add_argument("--format", choices=("claude", "codex"), default="claude")
+    parser.add_argument(
+        "--format", choices=("claude", "codex", "open_swe"), default="claude"
+    )
     parser.add_argument("--limit", type=int, default=0, help="0 reads every session")
     parser.add_argument("--min-calls", type=int, default=64)
     parser.add_argument("--batch-size", type=int, default=256)
@@ -159,7 +210,9 @@ def main() -> None:
 
     from sentence_transformers import SentenceTransformer
 
-    if args.format == "codex":
+    if args.format == "open_swe":
+        streams, failures = open_swe_streams(args.root, args.min_calls, args.limit)
+    elif args.format == "codex":
         streams, failures = codex_streams(args.root, args.min_calls, args.limit)
     else:
         streams, failures = session_streams(args.root, args.min_calls)
