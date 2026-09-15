@@ -53,7 +53,8 @@ def main() -> None:
     parser.add_argument("--rank", type=int, default=16)
     parser.add_argument("--learning-rate", type=float, default=1e-3)
     parser.add_argument("--weight-decay", type=float, default=0.0)
-    parser.add_argument("--stride", type=int, default=1, help="positions between updates")
+    parser.add_argument("--batch", type=int, default=1, help="positions averaged per update")
+    parser.add_argument("--replay", type=int, default=0, help="earlier positions added per update")
     parser.add_argument("--max-positions", type=int, default=400, help="per stream")
     parser.add_argument("--seeds", default="7,17,27")
     parser.add_argument("--output", type=Path)
@@ -99,6 +100,8 @@ def main() -> None:
                 lr=args.learning_rate,
                 weight_decay=args.weight_decay,
             )
+            seen: list[int] = []
+            pending: list[int] = []
             for step, position in enumerate(usable):
                 if step >= args.max_positions:
                     break
@@ -115,14 +118,44 @@ def main() -> None:
                     scored = candidates @ fixed
                     static_hits.append(float((scored > scored[0]).sum() == 0))
                 steps_taken.append(step)
-                if step % args.stride == 0:
-                    loss = F.cross_entropy(
-                        (candidates @ model(memory, turns[position])).unsqueeze(0) / 0.05,
-                        torch.zeros(1, dtype=torch.long),
-                    )
-                    optimiser.zero_grad(set_to_none=True)
-                    loss.backward()
-                    optimiser.step()
+                seen.append(position)
+                pending.append(position)
+                # Phase 55 found a single-position gradient noisy enough that
+                # continued updating walks the read somewhere useless. Batching
+                # averages several before stepping; replay adds earlier positions
+                # so the update is not only about the newest thing. Both draw
+                # solely from the past, so the causal guarantee is unchanged.
+                if len(pending) >= args.batch:
+                    chosen = list(pending)
+                    if args.replay and len(seen) > len(pending):
+                        older = seen[: -len(pending)]
+                        picks = torch.randint(
+                            len(older), (min(args.replay, len(older)),), generator=generator
+                        )
+                        chosen += [older[int(pick)] for pick in picks]
+                    losses = []
+                    for past in chosen:
+                        past_memory = turns[start:past]
+                        if not len(past_memory):
+                            continue
+                        past_foils = pool[
+                            torch.randperm(len(pool), generator=generator)[: args.foils]
+                        ]
+                        past_candidates = torch.cat(
+                            [futures[past].unsqueeze(0), futures[past_foils]]
+                        )
+                        losses.append(
+                            F.cross_entropy(
+                                (past_candidates @ model(past_memory, turns[past])).unsqueeze(0)
+                                / 0.05,
+                                torch.zeros(1, dtype=torch.long),
+                            )
+                        )
+                    if losses:
+                        optimiser.zero_grad(set_to_none=True)
+                        torch.stack(losses).mean().backward()
+                        optimiser.step()
+                    pending.clear()
         rows.append(
             {
                 "seed": seed,

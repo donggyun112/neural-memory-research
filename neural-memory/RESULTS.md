@@ -3596,3 +3596,51 @@ specific to per-position AdamW steps, or to this objective, is untested; batchin
 replaying earlier ones, or stopping on a held-out signal are all standard answers that were not
 tried. The early gain is measured on one corpus where headroom exists and is absent on the one where
 it does not, so it is a statement about that regime rather than about streams in general.
+
+# Phase 56: the collapse is mostly gradient noise, and mostly fixable
+
+Phase 55 left one question: adaptation helps for fifty updates and then walks away, and nothing
+stopped it. Two of the standard answers apply directly and both draw only on the past, so the causal
+guarantee is unchanged — batching averages several positions before stepping, and replay adds earlier
+ones so an update is not only about the newest thing.
+
+Claude action stream, three seeds:
+
+| Configuration | Whole stream | 100–200 updates | 200–400 updates |
+| --- | ---: | ---: | ---: |
+| Baseline, one position per update | -0.0607 | -0.0783 | -0.1405 |
+| Batch 8 | -0.0199 | -0.0108 | -0.0715 |
+| Batch 8, replay 8 | -0.0316 | -0.0198 | -0.1097 |
+| Batch 16, replay 32 | -0.0185 | -0.0135 | -0.0673 |
+| **Batch 16, replay 32, lr 3e-4** | **-0.0046** | **-0.0111** | **-0.0209** |
+
+**Batching is the single largest fix**, cutting the whole-stream loss by two thirds on its own, which
+identifies most of the collapse as gradient noise rather than anything structural. Replay on its own
+makes things slightly worse — batch 8 with replay 8 is behind batch 8 alone — and only helps once the
+batch is already large. Lowering the rate on top takes the whole stream to -0.0046.
+
+The window where adaptation is useful extends with each fix. At one position per update it closes
+after about fifty; at batch 16 the 100–200 bin is -0.0135 rather than -0.0783, so it closes nearer
+two hundred.
+
+**And the early gain survives every configuration.** The 25–50 bin is +0.0262, +0.0158, +0.0216,
++0.0203, +0.0203 across the five rows above, resolved in all of them. Whatever the stabilisers do to
+the tail, they do not touch the thing worth having.
+
+## What is left, and what the numbers say it is not
+
+Lowering the rate further does nothing: 1e-4 gives -0.0044 against 3e-4's -0.0046, identical to the
+third decimal. So the residual is not step size, and with Adam normalising by gradient magnitude the
+cumulative-movement hypothesis cannot be cleanly separated from noise by tuning the rate at all.
+Testing it needs a different optimiser or an explicit bound on how far the parameters may travel.
+
+The honest state is close to break-even and still on the wrong side: a memory adapting on its own
+stream is ahead by +0.020 through its first fifty updates, and behind by -0.0046 averaged over four
+hundred. That is a sixty-fold improvement on where Phase 55 left it and it is not yet a system.
+
+## Interpretation boundary
+
+One corpus, three seeds, and a stabiliser sweep chosen by hand rather than searched. The per-bin
+intervals are computed on the positions in each bin and the bins are not independent of one another,
+since a read that drifted early is the same read being scored late. Nothing here was run on Codex,
+where Phase 55 found no early gain to protect in the first place.
