@@ -4116,3 +4116,52 @@ The peak is bracketed by 3e-3 and 7e-3 and not located more precisely; 5e-3 is t
 rather than a fitted optimum, and choosing it from the same data that measures it inflates the
 +0.0083 somewhat. One optimiser, one rank, one temperature, and two corpora whose optima differ by an
 order of magnitude, which is the finding that most limits what can be claimed.
+
+# Phase 65: the first connection to something that actually happened
+
+Sixty-four phases of tuning have optimised one quantity: rank a future centroid among ninety-nine
+foils. Phase 33 retired the only endpoint that tried to connect a memory to an outcome, and nothing
+replaced it, so every gain since has been on a proxy with no established destination. Continuing to
+improve it is not worth doing until it is known to point at anything.
+
+The action stream carries a real outcome that nobody wrote for this purpose. A tool call either
+returned an error or it did not, and Claude's logs record the flag directly. The question is whether
+anything about the memory at position t carries information about whether the action at t+1 fails.
+
+11,917 positions, 272 of them followed by a failure, base rate 0.0228:
+
+| Signal available before the action is taken | AUC | 95% interval |
+| --- | ---: | --- |
+| Highest similarity to anything in memory | 0.4125 | [0.3774, 0.4458] |
+| The blend's agreement with itself | 0.4184 | [0.3825, 0.4517] |
+| **Novelty — the absence of any match** | **0.5787** | **[0.5453, 0.6142]** |
+
+All three resolved, and the first two sit *below* chance, which is the same statement read the other
+way: **an action that resembles what the memory already holds is more likely to succeed, and one that
+does not is more likely to fail.**
+
+This is the first time in this project that a quantity derived from memory has been shown to carry
+information about something that actually happened to the agent. It is not large — 0.579 is a weak
+predictor — but it is a real recorded outcome rather than a centroid, and the label was not
+constructed for the experiment.
+
+## What it does and does not license
+
+It does not say that retrieval quality matters. Novelty is a property of the current action against
+the memory as a whole, not of which item a reader surfaces, so the sixty-four phases of work on
+*what to surface* are not validated by this. What is validated is weaker and more useful: the memory
+state is not disconnected from outcomes, so there is a destination for this work to point at.
+
+It also suggests the more promising target is the one nobody here was optimising. A memory that
+answers "have I done something like this before, and did it go badly" is a different object from one
+that answers "which stored item is most relevant", and only the first has shown any link to a real
+consequence.
+
+## Interpretation boundary
+
+One corpus, 272 failures, all from one user's sessions and heavily concentrated in a few long ones.
+`is_error` catches hard failures only — an action that succeeded and should not have been taken is
+unlabelled, and that is most of what a memory would be for. Codex was not measured: its failure flags
+are inferred from output text rather than recorded, and the bootstrap over ten thousand of them did
+not finish. Novelty and failure could share a common cause — unfamiliar territory is both novel and
+error-prone for reasons having nothing to do with memory — and nothing here separates those.
