@@ -3698,3 +3698,62 @@ Fixing the population costs streams: 24 at length 100, 6 at 400, from 34. The lo
 therefore thin, and the 400-position conclusion rests on six sessions of one user. What would settle
 the expiry is more long streams, which the Codex corpus has — 200 sessions, many of them long — and
 where Phase 55 found no early gain to begin with, so it tests the decay without the benefit.
+
+# Phase 58: the expiry is partly the memory growing, and Codex never had anything to lose
+
+Two questions were left open. Does the expiry replicate where there are enough long streams to
+measure it, and is it about the number of updates or about the memory growing alongside them? Those
+two grow together in every run so far, and separating them needs only a fixed window on the memory.
+
+## Codex: negative everywhere, and the window changes nothing
+
+200 sessions, population fixed at each length:
+
+| Stream length | Memory grows | Memory held to 64 |
+| ---: | ---: | ---: |
+| 100 | -0.0206 | -0.0194 |
+| 200 | -0.0199 | -0.0176 |
+| 400 | -0.0155 | -0.0172 |
+| 800 | -0.0136 | -0.0120 |
+
+All resolved, all negative, and the window makes almost no difference. There is no expiry curve here
+because there was never anything to expire: Phase 55 found no early gain on Codex, and Phase 54
+explained why — a static pick already reaches 0.788 against a 0.815 ceiling, so adaptation has no
+room and can only disturb. Longer streams are slightly *less* bad, which is the opposite of an expiry.
+
+## Claude: bounding the memory bounds the decay
+
+| Stream length | Memory grows | Memory held to 64 |
+| ---: | ---: | ---: |
+| 100 | +0.0066 [+0.0020, +0.0112] | **+0.0092** [+0.0047, +0.0138] |
+| 400 | -0.0268 [-0.0336, -0.0200] | **-0.0084** [-0.0133, -0.0035] |
+
+Capping the memory improves the short-stream gain slightly and **cuts the long-stream damage by a
+factor of three**. So a real part of the decay is the memory growing under a read that was tuned when
+it was small, not the updates accumulating on their own — which is what the Codex rows, taken alone,
+would have suggested.
+
+That matters because it is the one lever here that a system would pull anyway. A memory with a
+bounded window is the ordinary engineering choice, and it happens to remove most of the failure mode.
+
+## Where this leaves the online result
+
+| Condition | Effect |
+| --- | --- |
+| Headroom present, short stream, bounded memory | **+0.0092**, resolved |
+| Headroom present, long stream, bounded memory | -0.0084, resolved |
+| Headroom present, long stream, unbounded memory | -0.0268, resolved |
+| No headroom, any length or window | -0.012 to -0.021, resolved |
+
+Adapting online helps only where a static reader has somewhere to improve to, and it helps most when
+the memory it reads is bounded. Neither of those is a tuning detail; they are conditions on when the
+mechanism applies at all, and they were invisible in every aggregate this line reported before
+Phase 57 fixed the population.
+
+## Interpretation boundary
+
+Window 64 was the only size tried and was not searched; it is plausible that a different bound moves
+both rows further. The Claude rows still rest on 24 and 6 streams. The headroom explanation ties four
+results together and is consistent with all of them, but it has never been manipulated directly — no
+experiment here varies headroom while holding the corpus fixed, which is what would turn it from a
+pattern into a cause.

@@ -84,6 +84,12 @@ def main() -> None:
         default=1,
         help="skip streams shorter than this, so every bin holds the same streams",
     )
+    parser.add_argument(
+        "--memory-window",
+        type=int,
+        default=0,
+        help="hold the memory to the most recent N items; 0 keeps everything",
+    )
     parser.add_argument("--seeds", default="7,17,27")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
@@ -137,7 +143,11 @@ def main() -> None:
             for step, position in enumerate(usable):
                 if step >= args.max_positions:
                     break
-                memory = turns[start:position]
+                # Updates and memory size grow together, so an expiry could be
+                # either. Holding the window fixed makes the task the same
+                # difficulty throughout and leaves only the update count moving.
+                low = max(start, position - args.memory_window) if args.memory_window else start
+                memory = turns[low:position]
                 future = futures[position]
                 foils = pool[torch.randperm(len(pool), generator=generator)[: args.foils]]
                 candidates = torch.cat([future.unsqueeze(0), futures[foils]])
@@ -167,7 +177,12 @@ def main() -> None:
                         chosen += [older[int(pick)] for pick in picks]
                     losses = []
                     for past in chosen:
-                        past_memory = turns[start:past]
+                        past_low = (
+                            max(start, past - args.memory_window)
+                            if args.memory_window
+                            else start
+                        )
+                        past_memory = turns[past_low:past]
                         if not len(past_memory):
                             continue
                         past_foils = pool[
