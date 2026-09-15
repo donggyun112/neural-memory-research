@@ -4683,3 +4683,49 @@ selective effect smaller than that would not show. The unfixed trajectories may 
 than worse-behaved, in which case a larger gain there is confounded with difficulty. Settling it needs
 either many more trajectories or an intervention that actually runs an agent, which needs a test
 harness this project does not have.
+
+# Phase 75: a better representation makes similarity retrieval worse, not better
+
+The obvious explanation for similarity losing to random is that the memory lives in the wrong space.
+BGE-small is 33 million parameters trained for sentence similarity, deciding what a 1.5-billion
+parameter model should be shown; the model that knows what a shell command does took no part in
+choosing. Two `ls` calls on different directories look nearly identical to BGE and are functionally
+unrelated, while a test failure and the edit that fixes it look unrelated and are causally joined. The
+fly makes the same point structurally, since KC to MBON is part of the circuit that computes the
+behaviour rather than a separate module feeding it.
+
+`prepare_generator_stream.py` re-encodes the same actions with the generator's own hidden states —
+400 streams, 46,113 actions, 1,536 dimensions — and every evaluation runs unchanged. Same
+trajectories, same positions, same conditions, same generator, same paired test. One thing differs.
+
+| Space | Random over similarity |
+| --- | ---: |
+| BGE-small, 384 dimensions | +0.1460 [+0.0960, +0.2027] |
+| **Qwen hidden states, 1,536 dimensions** | **+0.1693** [+0.0878, +0.2557] |
+
+**It gets worse.** Putting the memory in the acting model's own representation does not rescue
+similarity selection; it widens the gap. Summary over similarity is +0.1990 there against +0.1912 in
+BGE space, and the outcome split still resolves nothing.
+
+## The explanation this leaves is better than the one it rules out
+
+The representation hypothesis is dead, and what replaces it is sharper: **the better a representation
+captures what is happening now, the more the nearest stored item duplicates the context already in
+the prompt.** Similarity retrieval competes with recency for the same information, and a good encoder
+makes that competition worse rather than better, because it locates the duplicate more accurately.
+
+That predicts the direction observed — a 1,536-dimensional space from the model that will act finds
+closer near-copies than a 384-dimensional sentence encoder, and pays more for it.
+
+It also makes the four failures one failure. Phases 19, 47 and 71 could not learn what to select
+because the information determining it is absent at the moment of choice; this says that even a
+perfect notion of "alike" would not help, because alike is the wrong criterion. Selection by
+resemblance is not underpowered, it is pointed the wrong way.
+
+## Interpretation boundary
+
+400 trajectories against Phase 74's 900, so the intervals are wider and `summary over random` reads
++0.0297 and unresolved here where it was +0.0452 and resolved there; the sample, not the space, is the
+likely reason. Mean-pooled last-layer states with a 64-token cap, one layer and one pooling choice out
+of many — a different layer could behave differently, though it would have to reverse a gap that grew
+rather than shrank. The oracle is unchanged at +0.2722 ahead, so nothing here closes the real gap.
