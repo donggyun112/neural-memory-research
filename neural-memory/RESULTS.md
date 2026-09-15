@@ -4384,3 +4384,63 @@ first 2,000 characters of a result — and fires on 21% of actions against 2.3% 
 AUCs are not comparable with Phase 67's. What it supports is the ordering, which noise attenuates
 rather than inverts, and the ordering is resolved. A structured failure field for these traces, if one
 exists in the full dataset rather than the downloaded subset, would settle the magnitudes.
+
+# Phase 70: measuring behaviour, finally
+
+Every phase of this project ranked something, and the requirement was always a memory that improves an
+agent's behaviour. The two are not the same, and the gap has a structural reason: these logs record an
+agent that had no memory, so nothing was ever surfaced and no observational number can show surfacing
+helping. Worse, the proxy target rewards predicting what the agent actually did, mistakes included, so
+optimising it builds a better model of that agent rather than a better adviser to it.
+
+The fix is to intervene. Open-SWE trajectories are all `resolved`, so the action the agent took next
+is known-good. A frozen `Qwen2.5-1.5B-Instruct` is asked how likely that action is given the
+trajectory so far, with and without memory injected. Every condition injects four items, so length
+cannot stand in for content.
+
+250 trajectories:
+
+| Condition | Action NLL | Gain over no memory | Win rate |
+| --- | ---: | ---: | ---: |
+| No memory | 1.4058 | — | — |
+| Recency, the four preceding steps | 1.2548 | +0.1511 | 0.548 |
+| Similarity, the four most like the current state | 1.3028 | +0.1030 | 0.668 |
+| **Oracle, the four a reader with the future would pick** | **0.9193** | **+0.4865** | **0.828** |
+
+**The instrument works.** The oracle beats no memory by +0.4865 at a win rate of 0.828, which is what
+Phase 33 could not achieve and what retired the previous endpoint. The reason is the one Phase 40
+identified: there, a memory item was a ten-thousand-character session averaged into one vector and the
+answer was diluted away; here it is a single rendered action.
+
+Paired, because recency leads on the mean while similarity leads on the win rate, and that
+disagreement is exactly what retracted Phase 33:
+
+| Comparison | Difference | 95% interval |
+| --- | ---: | --- |
+| Similarity over recency | -0.0481 | [-0.1254, +0.0195], **not resolved** |
+| **Similarity over no memory** | **+0.1030** | [+0.0709, +0.1384] |
+| **Oracle over similarity** | **+0.3835** | [+0.2713, +0.5104] |
+
+## Three things, and the third is the point
+
+**Memory changes behaviour for the better.** +0.1030, resolved, against having none. That is the
+first behavioural result this project has produced, on a target nobody wrote for it.
+
+**Choosing what to surface by similarity is no better than taking the most recent thing.** -0.0481 and
+unresolved. Sixty-nine phases of work on retrieval quality do not beat a four-line baseline here.
+
+**And choosing it well is worth nearly four times more.** The oracle is +0.3835 ahead of similarity,
+resolved on a behavioural measure. So there *is* something to select — the selection problem is real,
+it is large, and cosine does not solve it.
+
+That last line is the one that justifies the project and has never before been demonstrated. Every
+earlier headroom was on a proxy. This one is on what the model would do.
+
+## Interpretation boundary
+
+The oracle looks at the action it is being scored on, so it is a ceiling and not a method. Likelihood
+of the known-good action is not the same as task success: `resolved` is 1 on every row here, so there
+is no failed trajectory to contrast against and nothing rules out a memory that raises likelihood
+while hurting outcomes. 250 trajectories, one generator, one prompt format, and four items per
+condition chosen without searching. The ceiling is measured with a single-item-per-slot oracle over
+the same stream, so it bounds selection from this memory rather than what any memory could offer.
