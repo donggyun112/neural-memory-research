@@ -150,6 +150,11 @@ def main() -> None:
         help="cue the read with the target itself, bounding what this read form can reach "
         "when the information it lacks is handed to it",
     )
+    parser.add_argument(
+        "--transfer-features",
+        type=Path,
+        help="evaluate on a different corpus than the one trained on",
+    )
     parser.add_argument("--steps", type=int, default=3000)
     parser.add_argument("--learning-rate", type=float, default=1e-3)
     parser.add_argument("--eval-positions", type=int, default=40)
@@ -158,20 +163,30 @@ def main() -> None:
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
-    payload = torch.load(args.features, map_location="cpu", weights_only=True)
-    turns = F.normalize(payload["turns"], dim=-1)
-    offsets = payload["offsets"]
-    episodes = len(offsets) - 1
+    def load(path: Path) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+        payload = torch.load(path, map_location="cpu", weights_only=True)
+        stream = F.normalize(payload["turns"], dim=-1)
+        bounds = payload["offsets"]
+        ahead = torch.zeros_like(stream)
+        usable = torch.zeros(len(stream), dtype=torch.bool)
+        for index in range(len(bounds) - 1):
+            start, stop = int(bounds[index]), int(bounds[index + 1])
+            for position in range(start, stop - args.horizon):
+                ahead[position] = stream[position + 1 : position + 1 + args.horizon].mean(0)
+                usable[position] = True
+        return stream, bounds, F.normalize(ahead, dim=-1), torch.nonzero(usable).flatten()
 
-    futures = torch.zeros_like(turns)
-    valid = torch.zeros(len(turns), dtype=torch.bool)
-    for index in range(episodes):
-        start, stop = int(offsets[index]), int(offsets[index + 1])
-        for position in range(start, stop - args.horizon):
-            futures[position] = turns[position + 1 : position + 1 + args.horizon].mean(0)
-            valid[position] = True
-    futures = F.normalize(futures, dim=-1)
-    pool = torch.nonzero(valid).flatten()
+    turns, offsets, futures, pool = load(args.features)
+    episodes = len(offsets) - 1
+    # Training on one corpus and evaluating on another asks whether the learned
+    # transform captured something general or something about the corpus it saw.
+    # The action stream is far too small to train on -- 298 failures across a
+    # handful of sessions would repeat Phase 48 -- so it is used only here.
+    if args.transfer_features:
+        eval_turns, eval_offsets, eval_futures, eval_pool = load(args.transfer_features)
+    else:
+        eval_turns, eval_offsets, eval_futures, eval_pool = turns, offsets, futures, pool
+    eval_count = len(eval_offsets) - 1
 
     rows = []
     for seed in (int(value) for value in args.seeds.split(",")):
@@ -179,7 +194,10 @@ def main() -> None:
         generator = torch.Generator().manual_seed(seed)
         order = torch.randperm(episodes, generator=generator)
         cut = int(episodes * (1.0 - args.holdout))
-        train_episodes, eval_episodes = order[:cut].tolist(), order[cut:].tolist()
+        train_episodes = order[:cut].tolist()
+        eval_episodes = (
+            list(range(eval_count)) if args.transfer_features else order[cut:].tolist()
+        )
 
         model = PredictiveRead(
             turns.shape[-1], args.rank, args.context, args.age, args.heads, args.mlp
@@ -192,8 +210,10 @@ def main() -> None:
             old_hits = {name: [] for name in hits}
             evaluation = torch.Generator().manual_seed(seed + 1)
             for index in eval_episodes:
-                start = int(offsets[index])
-                usable = list(episode_positions(offsets, index, args.warmup, args.horizon))
+                start = int(eval_offsets[index])
+                usable = list(
+                    episode_positions(eval_offsets, index, args.warmup, args.horizon)
+                )
                 if not usable:
                     continue
                 picked = torch.randperm(len(usable), generator=evaluation)[
@@ -201,19 +221,21 @@ def main() -> None:
                 ]
                 for slot in picked.tolist():
                     position = usable[slot]
-                    memory = turns[start:position]
-                    future = futures[position]
-                    foils = pool[torch.randperm(len(pool), generator=evaluation)[: args.foils]]
-                    candidates = torch.cat([future.unsqueeze(0), futures[foils]])
+                    memory = eval_turns[start:position]
+                    future = eval_futures[position]
+                    foils = eval_pool[
+                        torch.randperm(len(eval_pool), generator=evaluation)[: args.foils]
+                    ]
+                    candidates = torch.cat([future.unsqueeze(0), eval_futures[foils]])
                     best = int((memory @ future).argmax())
                     reads = {
                         "trained": model(
                             memory,
                             future.unsqueeze(0)
                             if args.cue_from_future
-                            else recent_turns(turns, start, position, args.context),
+                            else recent_turns(eval_turns, start, position, args.context),
                         ),
-                        "cosine": memory[int((memory @ turns[position]).argmax())],
+                        "cosine": memory[int((memory @ eval_turns[position]).argmax())],
                         "oracle": memory[best],
                         "recency": memory[-1],
                     }

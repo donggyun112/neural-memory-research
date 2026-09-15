@@ -18,6 +18,13 @@ def main() -> None:
     parser.add_argument("--output", type=Path, default=Path("artifacts/longmemeval_turns.pt"))
     parser.add_argument("--model", default="BAAI/bge-small-en-v1.5")
     parser.add_argument("--questions", type=int, default=100)
+    parser.add_argument(
+        "--require-answer",
+        action="store_true",
+        help="keep only haystacks whose gold answer appears verbatim in an evidence turn. "
+        "Needed for anything scored against the annotation; the self-supervised target of "
+        "Phase 44 does not use it, and the filter costs more than half the corpus.",
+    )
     parser.add_argument("--batch-size", type=int, default=256)
     parser.add_argument("--device", default="mps")
     parser.add_argument("--seed", type=int, default=7)
@@ -54,8 +61,12 @@ def main() -> None:
                     hit = len(turns) - start
                 turns.append(f"[{message.get('role', 'unknown')}] {content}")
         if hit < 0:
-            del turns[start:]
-            continue
+            if args.require_answer:
+                del turns[start:]
+                continue
+            # Without the annotation the target is meaningless but unused; a
+            # sentinel keeps the artifact's shape while making misuse obvious.
+            hit = -1
         questions.append(str(row["question"]))
         targets.append(hit)
         offsets.append(len(turns))

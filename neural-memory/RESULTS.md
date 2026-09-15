@@ -3257,3 +3257,77 @@ it needs no annotation and applies to any corpus of long conversations. That mak
 ingredient a public multi-session dialogue corpus rather than a labelling effort — a download, not a
 project. Whether any of the findings from Phase 44 onward survive at ten times the conversations is
 the question every one of them now waits on.
+
+# Phase 50: counting the wrong stream, and a transfer test that passes
+
+This is a memory meant to improve a model's behaviour, and every count in Phase 49 measured human
+conversation. The stream that matters is the model's own actions. Re-counting the same logs that way:
+
+| Stream | Sessions | Events |
+| --- | ---: | ---: |
+| User turns only | 50 | 1,467 |
+| All conversational turns | 228 | 6,730 |
+| **Tool calls** | 219 | **15,125** |
+
+The 249 MB dismissed in Phase 49 as "tool output rather than conversational text" was the data. That
+dismissal applied a criterion inherited from the old task — the same mistake as the `require_answer`
+filter removed minutes earlier, made twice in the same hour.
+
+Three things keep it from being the answer to the data problem, though. It is still seven times less
+than LongMemEval's 115,007. Three sessions hold 5,118 of the 15,125 calls, almost certainly this
+project's own, so it is far more concentrated than 500 distinct personas. And the free label is thin:
+441 errors, overwhelmingly in those same sessions, and `is_error` catches only hard failures while
+the interesting case — an action that succeeded and should not have been taken — carries no label at
+all.
+
+So it is used for what small data is good for. Training on it would repeat Phase 48.
+
+## The transfer test
+
+`prepare_claude_tool_stream.py` encodes each action as one line naming the tool and what it acted on,
+persisting embeddings only. 34 sessions, 12,495 actions, 298 failures. The read trained on
+LongMemEval is then evaluated there without adaptation, on 10,513 paired positions:
+
+| Reader | Top-1 | Top-1, old |
+| --- | ---: | ---: |
+| Recency | 0.3748 | 0.2946 |
+| Hard pick, cosine | 0.3885 | 0.3346 |
+| Soft blend, untrained | 0.3871 | 0.3323 |
+| **Soft blend, trained on LongMemEval** | 0.3955 | **0.3407** |
+| Best single item in memory | 0.7390 | **0.7075** |
+
+| Comparison | Difference | 95% interval |
+| --- | ---: | --- |
+| Trained minus untrained blend | **+0.0084** | [+0.0039, +0.0128] |
+| Blend minus hard pick | -0.0023 | [-0.0074, +0.0028] |
+| Trained minus hard pick | **+0.0061** | [+0.0008, +0.0113] |
+
+**It transfers.** A read trained on human conversations about hamsters and restaurants beats both an
+untrained blend and a plain cosine pick on a stream of shell commands and file edits, by a resolved
+margin. That is the evidence Phase 44's target was missing: predicting a five-turn future centroid is
+a proxy, and a proxy that transfers across corpora this different is measuring something that is not
+an artefact of either.
+
+It also separates two things LongMemEval had confounded. There, blending and training both helped and
+were hard to tell apart. Here blending alone buys nothing, -0.0023 and unresolved, and the entire
+gain is the learned transform.
+
+## The number that stands out
+
+The best single item in memory reaches **0.7075** on the action stream against 0.3697 on
+conversation. The right earlier action is far more identifiable from what follows than the right
+earlier turn is — actions repeat, files recur, the same command comes back. And the trained read
+captures 0.3407 of it.
+
+So the headroom here is 0.367, nearly three times conversation's 0.133, on a stream where the
+structure is more regular and the target is closer to a real outcome. Everything this project has
+been measuring on conversation has a richer version of itself sitting in the logs it was generating
+while running.
+
+## Interpretation boundary
+
+34 sessions with three dominating, one encoder, and an action rendered as its tool name plus one
+field. The transfer margin is +0.0084, which is resolved and small; what it establishes is direction,
+not size. The 0.7075 ceiling is measured the same way as everywhere else — it uses the future to pick
+the item — so it bounds what a perfect reader of this stream could do and says nothing about whether
+one is reachable.
