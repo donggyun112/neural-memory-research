@@ -4058,3 +4058,61 @@ Four rates on one corpus with one optimiser. The peak is somewhere near 3e-3 and
 located; the useful window's width is unknown and could be narrow enough to be impractical, since one
 order of magnitude past it costs twenty times what it gains. Nothing here was run on Codex with clean
 foils, and the movement measure still counts only changes in the top-scoring item.
+
+# Phase 64: the window is a factor of five, and the peak is twice what was found
+
+Mapping the rate finely, clean foils, five seeds:
+
+| Claude, learning rate | Attention moved | Online minus blend |
+| --- | ---: | --- |
+| 1e-3 | 0.0128 | +0.0013 [+0.0003, +0.0022] |
+| 2e-3 | 0.0417 | +0.0016, not resolved |
+| 3e-3 | 0.0866 | +0.0040 [+0.0013, +0.0067] |
+| **5e-3** | **0.1998** | **+0.0083** [+0.0037, +0.0127] |
+| 7e-3 | 0.3037 | +0.0008, not resolved |
+| 1e-2 | 0.3972 | -0.0166 [-0.0228, -0.0105] |
+
+**The peak is at 5e-3 and is twice what Phase 63 reported**, +0.0083 against +0.0040, at about a fifth
+of positions attending somewhere new. The useful window runs from roughly 1e-3 to 5e-3, a factor of
+five. One further doubling to 7e-3 returns to zero and the next is clearly negative, so the fall is
+much steeper than the rise.
+
+| Codex, learning rate | Attention moved | Online minus blend |
+| --- | ---: | --- |
+| 1e-3 | 0.0029 | +0.0003 [+0.0001, +0.0005] |
+| 3e-3 | 0.0123 | +0.0003, not resolved |
+| 1e-2 | 0.0801 | -0.0049 [-0.0063, -0.0034] |
+
+Codex peaks an order of magnitude lower and twenty times smaller, and is already negative where
+Claude is still climbing.
+
+## There is no universal knob
+
+Attention movement looked like the corpus-independent quantity to tune on — it is the thing the rate
+actually controls, and it is measurable without knowing the answer. It is not. Claude peaks near 20%
+movement; Codex peaks below 1% and is harmed at 8%. The rate that works has to be found per corpus,
+and the only signal for finding it is the objective itself.
+
+That is a practical limit rather than a fatal one: the loss being optimised is available online, so a
+system could search the rate on its own stream. But it means "adapt online" is not a setting that can
+be shipped with a default.
+
+## Where the online line ends
+
+| Component, Claude action stream, clean foils | Effect |
+| --- | --- |
+| Blending instead of picking one item | **+0.0262** |
+| Online adaptation at its best rate | **+0.0083** |
+| Online adaptation one doubling past it | +0.0008 |
+| Online adaptation one order of magnitude past it | -0.0166 |
+
+Adaptation is a third of the blend at its peak rather than the sixth Phase 63 measured, real, and
+fragile. Against Phase 60's version of this table, which had adaptation at zero or harmful
+everywhere, the difference is entirely two learning rates and a foil set.
+
+## Interpretation boundary
+
+The peak is bracketed by 3e-3 and 7e-3 and not located more precisely; 5e-3 is the best of six points
+rather than a fitted optimum, and choosing it from the same data that measures it inflates the
++0.0083 somewhat. One optimiser, one rank, one temperature, and two corpora whose optima differ by an
+order of magnitude, which is the finding that most limits what can be claimed.
