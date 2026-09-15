@@ -148,7 +148,17 @@ def main() -> None:
     tasks = [json.loads(line) for line in args.tasks.read_text().splitlines() if line.strip()]
     if args.limit:
         tasks = tasks[: args.limit]
-    memory = f"\nNotes from earlier repairs:\n{args.memory.read_text()}" if args.memory else ""
+    def notes(task: dict) -> str:
+        """The note block this task is given, if any.
+
+        A directory holds one block per task, which is what the similarity
+        condition needs: its choice depends on the cue and so changes from task
+        to task. A single file is the same block for everyone.
+        """
+        if args.memory is None:
+            return ""
+        source = args.memory / f"{task['name']}.txt" if args.memory.is_dir() else args.memory
+        return f"\nNotes from earlier repairs:\n{source.read_text()}" if source.exists() else ""
 
     trials: list[Trial] = []
     for position, task in enumerate(tasks, start=1):
@@ -165,7 +175,7 @@ def main() -> None:
                 failing="\n".join(f"  {node}" for node in task["failing"][:10]),
             )
         )
-        prompt = PROMPT.format(repo=workspace, report=report, memory=memory)
+        prompt = PROMPT.format(repo=workspace, report=report, memory=notes(task))
         started = time.time()
         with transcript.open("w") as stream:
             try:

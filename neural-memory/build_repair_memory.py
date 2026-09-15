@@ -68,6 +68,11 @@ def main() -> None:
     parser.add_argument("--keep", type=int, default=12, help="lines in the note block")
     parser.add_argument("--encoder", default="BAAI/bge-small-en-v1.5")
     parser.add_argument("--cue", help="text the similarity condition matches against")
+    parser.add_argument(
+        "--per-task",
+        type=Path,
+        help="round two tasks; writes one note block per task, cued by its failing tests",
+    )
     parser.add_argument("--all-runs", action="store_true", help="include runs that failed")
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--output", type=Path, required=True)
@@ -89,9 +94,41 @@ def main() -> None:
         else None
     )
 
+    def write(target: Path, picked: list[int]) -> None:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("".join(f"- {texts[index]}\n" for index in picked))
+
+    if args.per_task:
+        # Similarity picks against the present, so it has to be re-picked for
+        # every task rather than chosen once for all of them. The other rules do
+        # not depend on a cue and would write the same block each time; they are
+        # still written per task so the trial runner reads them the same way.
+        targets = [
+            json.loads(line)
+            for line in args.per_task.read_text().splitlines()
+            if line.strip()
+        ]
+        for task in targets:
+            here = (
+                encoder.encode(
+                    [" ".join(task["failing"][:10])],
+                    normalize_embeddings=True,
+                    show_progress_bar=False,
+                )[0]
+                if args.condition == "similarity"
+                else cue
+            )
+            write(args.output / f"{task['name']}.txt", choose(
+                args.condition, vectors, args.keep, here, args.seed
+            ))
+        print(
+            f"{args.condition}: {len(targets)} note blocks of {args.keep} lines"
+            f" from {len(actions)} actions in {len(trials)} runs -> {args.output}/"
+        )
+        return
+
     picked = choose(args.condition, vectors, args.keep, cue, args.seed)
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text("".join(f"- {texts[index]}\n" for index in picked))
+    write(args.output, picked)
     sources = {actions[index][0] for index in picked}
     print(
         f"{args.condition}: {len(picked)} lines from {len(sources)} tasks"
