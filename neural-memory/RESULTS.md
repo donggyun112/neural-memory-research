@@ -3483,3 +3483,53 @@ tools. A genuinely independent target, another user's logs or another agent's tr
 turn this from "not an artefact of three sessions" into "transfers". The ceiling row is the one worth
 staring at: 0.3462 against 0.7075 means that whatever is working here is capturing under half of what
 is available on the stream this system is actually for.
+
+# Phase 54: an independent target, and the transfer does not survive it
+
+Phase 53 asked for another agent's traces. There are 1,118 Codex session files on this machine, a
+different agent with different tool names and a different call format — `function_call` with JSON
+argument strings rather than Claude's nested content blocks. Two hundred of them give 44,880 actions,
+three and a half times the Claude stream.
+
+| Transfer target | Trained minus hard pick | Positions |
+| --- | --- | ---: |
+| Claude action stream | **+0.0116** [+0.0060, +0.0171] | 10,513 |
+| **Codex, linear read** | **-0.0230** [-0.0243, -0.0218] | 79,680 |
+| Codex, without the largest 10 sessions | -0.0195 [-0.0207, -0.0183] | 73,769 |
+| Codex, tuned non-linear read | -0.0258 [-0.0272, -0.0245] | 79,680 |
+
+**All three negative, all resolved, on eight times the positions the positive result had.** On a
+genuinely different agent the trained read is worse than doing nothing, and the tuned non-linear read
+is worse still.
+
+## What Phase 53 should have said
+
+That phase concluded the linear read "learned something about memory rather than about LongMemEval",
+on the strength of a transfer to the Claude action stream. That transfer was to a near domain: the
+same user, the same tools, the same names — `Bash`, `Edit`, `Read` — so the action embeddings sit in
+a space overlapping the one the read was trained in. Codex shares none of that.
+
+The corrected statement is narrower and duller: the read learned something that survives a related
+corpus and not an unrelated one. Every row of the summary table in Phase 53 stands as measured; the
+sentence built on top of them does not.
+
+## Why it might break this way
+
+Codex streams are far more predictable than either corpus measured before. A hard cosine pick reaches
+about 0.744 there against 0.335 on the Claude stream, and the ceiling is 0.8146 against 0.7075 — the
+headroom is 0.09, not 0.36. Codex actions repeat heavily, so plain similarity is already close to the
+best available, and a learned perturbation trained on conversational structure has almost nothing to
+add and plenty to disturb. Where the baseline is near its ceiling, any transfer that is not exactly
+right is a loss.
+
+That is a testable story rather than a settled one, and the obvious check is whether the loss
+concentrates on the positions where cosine was already correct.
+
+## Interpretation boundary
+
+Codex failure flags are read off output text rather than a structured field, which affects the
+descriptive failure count and nothing in the table above. Both transfer corpora are still one
+person's logs on one machine; a second *user* remains untested and would bear on a different question
+than a second agent does. The negative result is large in confidence and small in size — two
+percentage points — so what it rules out is the claim that this read transfers, not the possibility
+that some read does.

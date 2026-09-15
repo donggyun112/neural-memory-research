@@ -22,6 +22,83 @@ def render(part: dict) -> str:
     return f"[{name}]"
 
 
+def render_codex(name: str, raw: object) -> str:
+    """The same one-line description for Codex's own call format.
+
+    Codex records `function_call` with the arguments as a JSON string rather
+    than Claude's nested content blocks, but the useful fields are the same ones.
+    """
+    arguments: object = raw
+    if isinstance(raw, str):
+        try:
+            arguments = json.loads(raw)
+        except json.JSONDecodeError:
+            return f"[{name}] {raw.strip()[:400]}"
+    if isinstance(arguments, dict):
+        for key in ("command", "file_path", "path", "pattern", "query", "prompt", "description"):
+            value = arguments.get(key)
+            if isinstance(value, list):
+                value = " ".join(str(item) for item in value)
+            if isinstance(value, str) and value.strip():
+                return f"[{name}] {value.strip()[:400]}"
+    return f"[{name}]"
+
+
+def codex_streams(root: Path, minimum: int, limit: int) -> tuple[list[list[str]], list[list[int]]]:
+    """Action streams from Codex sessions: a different agent, different tools."""
+    streams, failures = [], []
+    for path in sorted(root.rglob("*.jsonl")):
+        if limit and len(streams) >= limit:
+            break
+        actions, failed, pending = [], [], {}
+        try:
+            handle = path.open()
+        except OSError:
+            continue
+        with handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                payload = row.get("payload") if isinstance(row.get("payload"), dict) else row
+                kind = payload.get("type")
+                if kind in {"function_call", "custom_tool_call"}:
+                    name = payload.get("name")
+                    call_id = payload.get("call_id") or payload.get("id")
+                    if not isinstance(name, str) or not isinstance(call_id, str):
+                        continue
+                    raw = (
+                        payload.get("arguments")
+                        if kind == "function_call"
+                        else payload.get("input")
+                    )
+                    actions.append(render_codex(name, raw))
+                    failed.append(0)
+                    pending[call_id] = len(actions) - 1
+                elif kind in {"function_call_output", "custom_tool_call_output"}:
+                    call_id = payload.get("call_id")
+                    slot = pending.pop(call_id, None) if isinstance(call_id, str) else None
+                    if slot is None:
+                        continue
+                    output = payload.get("output")
+                    text = output if isinstance(output, str) else json.dumps(output, default=str)
+                    # Codex does not carry an error flag, so failure is read off
+                    # the output text. Cruder than Claude's is_error and only
+                    # used as a descriptive count.
+                    lowered = text[:2000].lower()
+                    failed[slot] = int(
+                        any(mark in lowered for mark in ("error", "traceback", "exit code: 1"))
+                    )
+        if len(actions) >= minimum:
+            streams.append(actions)
+            failures.append(failed)
+    return streams, failures
+
+
 def session_streams(root: Path, minimum: int) -> tuple[list[list[str]], list[list[int]]]:
     """Ordered action text per session, with a flag for actions that failed."""
     streams, failures = [], []
@@ -73,6 +150,8 @@ def main() -> None:
         "--output", type=Path, default=Path("artifacts/claude_tool_stream.pt")
     )
     parser.add_argument("--model", default="BAAI/bge-small-en-v1.5")
+    parser.add_argument("--format", choices=("claude", "codex"), default="claude")
+    parser.add_argument("--limit", type=int, default=0, help="0 reads every session")
     parser.add_argument("--min-calls", type=int, default=64)
     parser.add_argument("--batch-size", type=int, default=256)
     parser.add_argument("--device", default="mps")
@@ -80,7 +159,10 @@ def main() -> None:
 
     from sentence_transformers import SentenceTransformer
 
-    streams, failures = session_streams(args.root, args.min_calls)
+    if args.format == "codex":
+        streams, failures = codex_streams(args.root, args.min_calls, args.limit)
+    else:
+        streams, failures = session_streams(args.root, args.min_calls)
     if not streams:
         raise RuntimeError("no session carries enough tool calls")
     flat = [text for stream in streams for text in stream]
