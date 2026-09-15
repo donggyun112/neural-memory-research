@@ -157,6 +157,7 @@ def main() -> None:
     )
     parser.add_argument("--steps", type=int, default=3000)
     parser.add_argument("--learning-rate", type=float, default=1e-3)
+    parser.add_argument("--weight-decay", type=float, default=0.0)
     parser.add_argument("--eval-positions", type=int, default=40)
     parser.add_argument("--holdout", type=float, default=0.3)
     parser.add_argument("--seeds", default="7,17,27")
@@ -259,7 +260,13 @@ def main() -> None:
             }
 
         before = evaluate()
-        optimiser = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
+        # The non-linear read carries sixteen times the parameters of the linear
+        # one and every run so far gave both the same rate and no decay. Before
+        # believing anything about why it fails, it has to be given the tuning
+        # the comparison never offered it.
+        optimiser = torch.optim.AdamW(
+            model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay
+        )
         model.train()
         training = torch.Generator().manual_seed(seed + 2)
         for _ in range(args.steps):

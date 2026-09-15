@@ -3374,3 +3374,61 @@ One doubling. A factor of two is a weak test of a data hypothesis, and nothing h
 non-linear read working at ten times or a hundred. What it does rule out is the specific expectation
 Phase 48 set, which is worth recording because that phase was about to be used to justify fine-tuning
 an encoder on the strength of it.
+
+# Phase 52: it was the learning rate, and the tuned model loses what mattered
+
+Phase 51 proposed a geometric reason for the non-linear read's failure — scoring space and output
+space coming apart. Phase 48's own boundary section had already named the mundane alternative and it
+was never tested: the residual carries sixteen times the parameters of the linear read, and every run
+gave both the same learning rate and no decay.
+
+The mundane alternative wins. 470 conversations, three seeds:
+
+| Configuration | Top-1, old | Trained minus hard pick |
+| --- | ---: | --- |
+| Linear reference | 0.2542 | +0.0312 [+0.0231, +0.0391] |
+| Hidden 256, lr 1e-3 (every earlier run) | 0.2276 | +0.0046, **not resolved** |
+| Hidden 256, lr 3e-4 | 0.2429 | +0.0199 |
+| **Hidden 256, lr 1e-4** | **0.2598** | **+0.0367** [+0.0289, +0.0448] |
+| Hidden 256, lr 1e-4, decay 1e-1 | 0.2579 | +0.0349 |
+
+Learning rate is the whole effect and it is monotone; weight decay does essentially nothing. "Capacity
+makes it worse", the conclusion of Phase 48 and the premise of Phase 51's geometric story, was a
+sixteen-times-larger model run at the smaller model's rate.
+
+**This is the fourth time in this session a configuration difference has been reported as a finding.**
+Phase 29 read hand-set constants as a dead component. Phase 36 read a metric containing its own write
+as a mechanism ranking. Phase 45's first draft read a softmax temperature as a training effect. Now a
+learning rate as a statement about capacity. The pattern is consistent enough to be a rule: before
+believing that a component does not work, check that it was given the setting it needs.
+
+## And the tuned model loses the property that mattered
+
+Confirmed at five seeds on 7,202 paired positions, then carried to the action stream of Phase 50
+without adaptation:
+
+| Read | LongMemEval, old | Transfer to the action stream |
+| --- | ---: | --- |
+| Linear | 0.2466, +0.0314 [+0.0250, +0.0378] | **+0.0061** [+0.0008, +0.0113], resolved |
+| Non-linear, tuned | **0.2512**, +0.0360 [+0.0297, +0.0425] | +0.0011 [-0.0044, +0.0065], **not resolved** |
+
+In-domain the tuned non-linear read is ahead, though the two runs are not paired against each other
+and their intervals overlap, so that ordering is suggestive rather than settled. Out of domain it
+gives up exactly what made the linear read worth having. The extra capacity buys corpus-specific
+structure.
+
+So Phase 48's instinct was right about the nature of the problem and wrong about every measurement it
+used to support it. The non-linear read does overfit — not in a way that shows up as a worse held-out
+number on the corpus it trained on, which is what that phase looked for, but as a collapse the moment
+the corpus changes. Only a transfer test could see it, and this project did not have one until
+Phase 50.
+
+The linear read stays, now for a measured reason rather than an assumed one.
+
+## Interpretation boundary
+
+The learning rate sweep is five points on one architecture at one corpus size; 1e-4 is simply the
+best of what was tried and may not be the best available. The transfer corpus is 34 sessions with
+three dominating, so "does not transfer" here means "does not transfer to this", and a second transfer
+target would make the claim much stronger. Nothing about the in-domain ordering between linear and
+tuned non-linear is resolved.
