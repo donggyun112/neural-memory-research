@@ -3331,3 +3331,46 @@ field. The transfer margin is +0.0084, which is resolved and small; what it esta
 not size. The 0.7075 ceiling is measured the same way as everywhere else — it uses the future to pick
 the item — so it bounds what a perfect reader of this stream could do and says nothing about whether
 one is reachable.
+
+# Phase 51: twice the data, and the prediction that came with it fails
+
+Phase 48 found non-linear capacity making the read worse and concluded the obstacle was data rather
+than representation. That conclusion carries a prediction: at more data the non-linear model should
+close on the linear one. The `require_answer` filter was the only thing keeping the corpus at 233
+conversations, and the self-supervised target never needed it, so removing it gives 470 conversations
+and 231,595 turns — twice everything.
+
+| Read | 233 conversations | 470 conversations |
+| --- | ---: | ---: |
+| Linear | 0.2397 | **0.2497** |
+| Non-linear, hidden 256 | 0.2082 | 0.2145 |
+
+| Read, 470 conversations | Trained minus hard pick |
+| --- | --- |
+| Linear | **+0.0346** [+0.0280, +0.0412], resolved, 7,202 positions |
+| Non-linear, hidden 256 | -0.0007 [-0.0072, +0.0061], not resolved |
+
+**Data helps the linear read.** 0.2397 to 0.2497, with the margin over an untrained hard pick growing
+from +0.0311 to +0.0346 and its interval tightening. That is the strongest form of this result so far.
+
+**It does not rescue the non-linear one.** Hidden 256 gains 0.006 and stays 0.035 below linear, still
+unable to beat a hard pick. Doubling changed the ordering not at all.
+
+So Phase 48's diagnosis was half right and the half it got wrong is the part it predicted. More data
+does help; it does not make capacity usable. Either far more than twice is needed, or the
+non-linearity hurts for a reason that is not sample size.
+
+There is a candidate for the second, and it is untested. The residual transforms both the cue and the
+memory before scoring, but the read still outputs the *original* memory vectors, because that is the
+space the target lives in. A non-linear scoring space free to reshape similarity can therefore rank
+highly an item whose untransformed embedding does not match the future at all — the space it selects
+in and the space it is graded in come apart. The linear version cannot drift as far. If that is the
+cause, the fix is to score and output in the same space rather than to collect more data, which is a
+different project from the one Phase 48 pointed at.
+
+## Interpretation boundary
+
+One doubling. A factor of two is a weak test of a data hypothesis, and nothing here rules out a
+non-linear read working at ten times or a hundred. What it does rule out is the specific expectation
+Phase 48 set, which is worth recording because that phase was about to be used to justify fine-tuning
+an encoder on the strength of it.
