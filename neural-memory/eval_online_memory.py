@@ -71,6 +71,12 @@ def main() -> None:
     parser.add_argument("--horizon", type=int, default=5)
     parser.add_argument("--warmup", type=int, default=32)
     parser.add_argument("--foils", type=int, default=99)
+    parser.add_argument(
+        "--foil-ceiling",
+        type=float,
+        default=2.0,
+        help="drop foils this close to the target; 2.0 keeps every one",
+    )
     parser.add_argument("--rank", type=int, default=16)
     parser.add_argument("--learning-rate", type=float, default=1e-3)
     parser.add_argument("--weight-decay", type=float, default=0.0)
@@ -155,7 +161,16 @@ def main() -> None:
                 low = max(start, position - args.memory_window) if args.memory_window else start
                 memory = turns[low:position]
                 future = futures[position]
-                foils = pool[torch.randperm(len(pool), generator=generator)[: args.foils]]
+                drawn = pool[torch.randperm(len(pool), generator=generator)[: args.foils * 3]]
+                # A repetitive corpus hands back foils identical to the target,
+                # and ties are scored as hits, so a reader that separates nothing
+                # reads as perfect. On the Codex stream half the foils sit above
+                # 0.99 cosine to the future. Dropping them makes the choice a
+                # real one.
+                keep = (futures[drawn] @ future) < args.foil_ceiling
+                foils = drawn[keep][: args.foils]
+                if len(foils) < args.foils // 2:
+                    continue
                 candidates = torch.cat([future.unsqueeze(0), futures[foils]])
                 with torch.no_grad():
                     # Scored before the update, so this position never trained it.

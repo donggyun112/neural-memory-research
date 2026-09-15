@@ -3878,3 +3878,73 @@ the second and third weights also matter; a read could change its output meaning
 argmax flipping. The two rates bracket the behaviour but nothing between them was tried, so it is
 possible a rate exists where the read moves a little and helps a little. Given that both measured
 points are negative or null, that would be a narrow window to go looking for.
+
+# Phase 61: half the foils were the answer, and ties counted as wins
+
+Training offline on the Codex action stream collapses the read — `trained minus blend` is **-0.3544**,
+which is not a degradation, it is a destroyed model. Training on the Claude stream does nothing much,
++0.0127 and unresolved. A difference that large between two corpora of the same kind points at the
+data rather than the method.
+
+The objective asks the read to rank the true future above ninety-nine others drawn from the same
+corpus. Counting how many of those are the same thing:
+
+| Corpus | Foils above 0.99 cosine to the target | Positions with at least one |
+| --- | ---: | ---: |
+| **Codex action stream** | **49.87 of 99** | **0.765** |
+| Claude action stream | 0.02 | 0.020 |
+| LongMemEval turns | 0.00 | 0.003 |
+
+**On Codex, half the foils are the target.** Repetitive tool use means the same five-action window
+recurs constantly, so InfoNCE is demanding an impossible discrimination and its gradient can only be
+destructive — which is exactly the -0.3544.
+
+And the evaluation has the matching defect. A hit was counted as `(scored > scored[0]).sum() == 0`,
+strict inequality, so **a foil scoring exactly equal to the target counts as a win**. A reader that
+separates nothing at all reads as perfect wherever the duplicates are.
+
+## What the defect was worth
+
+Dropping foils within 0.9 cosine of the target:
+
+| Corpus | All foils | Duplicates removed |
+| --- | --- | --- |
+| Codex, blend minus static | **-0.0200** [-0.0221, -0.0178] | **+0.0019** [+0.0009, +0.0029] |
+| Claude, blend minus static | +0.0089 [+0.0043, +0.0135] | **+0.0262** [+0.0217, +0.0304] |
+
+On Codex the sign flips. On Claude the effect triples. The absolute scores rise on both — 0.73 to
+0.88 and 0.38 to 0.60 — because clean foils are easier than duplicate ones, so numbers are not
+comparable across the two columns, only signs and orderings within them.
+
+## What this invalidates
+
+Every Codex number in this project was measured with a foil set that was half answers:
+
+- **Phase 54's headline** — "transfer to a different agent fails, -0.0230" — is not supported. That
+  measurement's negative sign is the same one that flips here.
+- Phase 58's Codex rows, which concluded there was "never anything to expire", and the headroom
+  explanation built on Codex's apparently high baseline of 0.79. That baseline was ties.
+- Phase 59's Codex horizon rows and Phase 60's account of them.
+
+LongMemEval is clean at 0.00 duplicates, so Phases 44 through 53 are unaffected. The Claude action
+stream is nearly clean at 0.99 but has 11 of 99 foils above 0.9, so its numbers are understated
+rather than wrong — the direction holds and the size was too small.
+
+The surviving result therefore survives and grows: a blended read beats a single-item pick, by
++0.0262 on the Claude action stream once the foils are real, against the +0.0089 previously reported.
+
+## The sixth
+
+Phase 29's constants, Phase 36's metric, Phase 45's temperature, Phase 52's learning rate, Phase 59's
+missing blend control, and now a corpus whose foils are copies of its answers. Five of the six were
+found by asking why a number looked strange rather than by checking. This one came from a -0.3544
+that was too large to be anything but a broken setup.
+
+## Interpretation boundary
+
+The 0.9 threshold is a judgement, not a derived quantity; 0.95 or 0.8 would give different absolute
+numbers. Re-running every affected phase with clean foils is not done here — what is established is
+that the Codex conclusions cannot stand as written and that the Claude direction survives with a
+larger effect. The offline collapse of -0.3544 has not been re-measured with clean foils either, so
+whether training on action streams works at all is now an open question rather than a settled
+failure.
