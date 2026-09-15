@@ -3829,3 +3829,52 @@ The frozen blend uses the same random initialisation as the adapting one, so the
 `online minus blend` being unresolved at five of six settings is a statement that the effect is below
 about 0.001 there, not that it is exactly zero. Nothing here says online adaptation cannot work —
 only that this implementation of it, at every setting tried across four phases, did nothing.
+
+# Phase 60: it did nothing because it never moved, and where it moves it hurts
+
+An effect of +0.0000 after thousands of gradient steps is not a small effect, it is a broken one.
+Phase 56 had already reported that a travel budget of 0.03 never binds, which should have been the
+clue: the read was not going anywhere. With a softmax temperature of 0.02 the blend is nearly an
+argmax, so a small shift changes the scores without changing which item dominates, and the read is
+frozen in output while its parameters drift.
+
+Counting how often the adapted read actually attends somewhere the frozen one does not:
+
+| Learning rate | Attention moved | Shift norm at stream end | Online minus blend |
+| --- | ---: | ---: | --- |
+| 3e-4, the rate used in Phases 56–59 | **0.0032** | 0.079 | +0.0006 [+0.0001, +0.0011] |
+| 1e-2 | **0.3937** | 4.865 | **-0.0315** [-0.0394, -0.0238] |
+
+**At the settings every online phase used, the read attended somewhere different on three positions
+in a thousand.** That is why adaptation measured as nothing: it did not happen. Turn the rate up
+until it does happen, on four positions in ten, and the effect is clearly negative and resolved.
+
+## The complete account of the online line
+
+- Where the read moves enough to matter, online adaptation selects worse items, -0.0315.
+- Where it does not hurt, it is because it has not moved, 0.3% of positions.
+- There is no setting tried in which it moves and helps.
+
+This also explains Phase 56 backwards. Batching "fixed the collapse" by reducing effective movement —
+it froze the read harder. The stabilisers were not protecting a mechanism, they were suppressing one
+that only ever did damage.
+
+So the honest conclusion is stronger than Phase 59's "contributes nothing": **this objective,
+optimised online one stream at a time, actively picks worse memory items whenever it changes anything
+at all.** Whether that is the objective, the single-stream sample size, or the parameterisation is not
+separated here, and the three are testable independently.
+
+## What is left standing
+
+Only the horizon result, which involves no learning: a blended read beats a single-item pick in
+proportion to how broad the target is, +0.0046 to +0.0104 on Claude and -0.0142 to +0.0253 on Codex
+as the horizon goes from one action to twenty. That is a fact about averaging versus selecting,
+measured on two corpora, and it is what this line of the project actually produced.
+
+## Interpretation boundary
+
+"Attention moved" counts changes in the top-scoring item, which understates movement in a blend where
+the second and third weights also matter; a read could change its output meaningfully without the
+argmax flipping. The two rates bracket the behaviour but nothing between them was tried, so it is
+possible a rate exists where the read moves a little and helps a little. Given that both measured
+points are negative or null, that would be a narrow window to go looking for.

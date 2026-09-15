@@ -38,9 +38,11 @@ class OnlineRead(nn.Module):
         nn.init.normal_(self.left, std=0.01)
         self.temperature = temperature
 
+    def scores(self, memory: Tensor, cue: Tensor) -> Tensor:
+        return memory @ (cue + self.right @ (self.left.T @ cue))
+
     def forward(self, memory: Tensor, cue: Tensor) -> Tensor:
-        shifted = cue + self.right @ (self.left.T @ cue)
-        weights = F.softmax(memory @ shifted / self.temperature, dim=0)
+        weights = F.softmax(self.scores(memory, cue) / self.temperature, dim=0)
         return F.normalize(weights @ memory, dim=0)
 
     @torch.no_grad()
@@ -118,7 +120,7 @@ def main() -> None:
         # has had hundreds of updates, so the position each score came from is
         # kept and the comparison is reported as a curve.
         online_hits, static_hits, steps_taken = [], [], []
-        ceiling_hits, blend_hits = [], []
+        ceiling_hits, blend_hits, moved, travelled = [], [], [], []
         # One frozen copy for the whole run: the untrained blend is the same
         # function everywhere, so it needs no per-stream state.
         frozen = OnlineRead(turns.shape[-1], args.rank)
@@ -176,6 +178,17 @@ def main() -> None:
                     # own.
                     scored = candidates @ frozen(memory, turns[position])
                     blend_hits.append(float((scored > scored[0]).sum() == 0))
+                    # An effect of exactly zero is not a small effect. With the
+                    # softmax this sharp, a small shift changes scores without
+                    # changing which item dominates, and then the read is frozen
+                    # in output even while its parameters move. This counts how
+                    # often the adapted read actually attends somewhere else.
+                    moved.append(
+                        float(
+                            int(model.scores(memory, turns[position]).argmax())
+                            != int(frozen.scores(memory, turns[position]).argmax())
+                        )
+                    )
                 steps_taken.append(step)
                 seen.append(position)
                 pending.append(position)
@@ -221,6 +234,7 @@ def main() -> None:
                         optimiser.step()
                         model.constrain(args.budget)
                     pending.clear()
+            travelled.append(float(model.left.norm() * model.right.norm()))
         rows.append(
             {
                 "seed": seed,
@@ -232,6 +246,8 @@ def main() -> None:
                 "_steps": steps_taken,
                 "ceiling": float(np.mean(ceiling_hits)),
                 "blend": float(np.mean(blend_hits)),
+                "attention_moved": float(np.mean(moved)),
+                "shift_norm": float(np.mean(travelled)),
                 "_blend": blend_hits,
             }
         )
@@ -253,6 +269,14 @@ def main() -> None:
     print(f"{'online, adapting as it goes':>26} {online.mean():9.4f}")
     print(f"{'best single item (ceiling)':>26} {ceiling:9.4f}")
     print(f"{'headroom':>26} {ceiling - static.mean():9.4f}")
+    print(
+        f"{'attention moved':>26} "
+        f"{float(np.mean([row['attention_moved'] for row in rows])):9.4f}"
+    )
+    print(
+        f"{'shift norm at stream end':>26} "
+        f"{float(np.mean([row['shift_norm'] for row in rows])):9.4f}"
+    )
     # The decomposition the horizon sweep demands: how much of the gain is
     # blending rather than adapting.
     for label, left, right in (
