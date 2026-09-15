@@ -4444,3 +4444,54 @@ is no failed trajectory to contrast against and nothing rules out a memory that 
 while hurting outcomes. 250 trajectories, one generator, one prompt format, and four items per
 condition chosen without searching. The ceiling is measured with a single-item-per-slot oracle over
 the same stream, so it bounds selection from this memory rather than what any memory could offer.
+
+# Phase 71: the behavioural gap is real and not learnable from the cue
+
+Phase 70 left the first target in this project worth training against: a +0.3835 behavioural gap
+between similarity and an oracle, resolved, on what a model would actually do. Nothing before it had
+both a working instrument and a large gap.
+
+The oracle needs the action being predicted, so it cannot be run — but it is a label. A scorer that
+saw only the state so far and ranked what the oracle would have picked would collect the gap.
+`train_action_selector.py` trains exactly that: bilinear over memory, initialised at cosine, held out
+by trajectory, 8,000 steps, never touching the generator.
+
+It does not work, and the reason is not the usual one:
+
+| Reader | Agrees with the oracle |
+| --- | ---: |
+| Cosine | 0.1678 |
+| Trained, before training | 0.1822 |
+| Trained, after training | 0.1700 |
+| **Trained, on the streams it trained on** | **0.1743** |
+
+**It cannot fit the training data.** Held-out agreement is 0.1700 and seen agreement is 0.1743 —
+within noise of each other and of where it started. Training makes it slightly worse at every rate
+tried, 1e-4 through 1e-3. This is not overfitting, which would show as a gap between the last two
+rows. The mapping from "the state so far" to "what the oracle picks" does not exist in this
+representation.
+
+## The same wall as Phase 47, now on behaviour
+
+Phase 47 cued the same architecture with the target itself and reached 0.6581 against 0.2391 with the
+real cue, concluding the read was nowhere near its limit and the cue carried nothing about which item
+would matter. That was on the proxy. This is the behavioural version and it says the same thing more
+starkly: on the proxy the learned read at least improved, here it cannot improve on training data.
+
+So the two results from Phase 70 and this one fit together:
+
+- There **is** something worth selecting — the oracle is +0.3835 ahead, on behaviour, resolved.
+- Which item that is **is not determined** by anything available when the choice has to be made.
+
+That is the same shape as Phase 19's ceiling on write-time selection, reached from the opposite end of
+the system and on a different kind of measurement. Three independent routes now say the information
+about what will matter is not present at the moment the decision is taken.
+
+## Interpretation boundary
+
+One target definition — the oracle is the single memory item most similar to the next action, and a
+different notion of "what should have been surfaced" might be learnable where this one is not.
+Agreement with the oracle's top pick is a strict criterion; a selector could improve the injected set
+without matching that argmax, and the behavioural evaluation was not re-run on this selector because
+it had nothing to test. BGE-small embeddings of one-line action renderings throughout, so the
+representation is the same one Phase 47 found wanting.
