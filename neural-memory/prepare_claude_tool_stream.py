@@ -118,7 +118,7 @@ def open_swe_streams(
                 row = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            actions, failed, pending = [], [], {}
+            actions, failed, pending = [], [], []
             for message in row.get("messages") or []:
                 if not isinstance(message, dict):
                     continue
@@ -129,18 +129,27 @@ def open_swe_streams(
                     name = str(function.get("name") or call.get("name") or "unknown")
                     actions.append(render_codex(name, function.get("arguments")))
                     failed.append(0)
-                    identifier = call.get("id")
-                    if isinstance(identifier, str):
-                        pending[identifier] = len(actions) - 1
+                    pending.append(len(actions) - 1)
                 if message.get("role") == "tool":
-                    slot = pending.pop(str(message.get("tool_call_id")), None)
-                    if slot is None:
+                    # These traces carry no tool_call_id on the result, so the
+                    # result is matched to the oldest call still waiting. The
+                    # transcript strictly alternates, so order is the only link
+                    # available and it is reliable here.
+                    if not pending:
                         continue
+                    slot = pending.pop(0)
                     text = str(message.get("content") or "")[:2000].lower()
-                    # No structured error flag here either, so failure is read
-                    # off the output and used only as a descriptive count.
                     failed[slot] = int(
-                        any(mark in text for mark in ("error", "traceback", "no such file"))
+                        any(
+                            mark in text
+                            for mark in (
+                                "error",
+                                "traceback",
+                                "no such file",
+                                "command failed",
+                                "exit code: 1",
+                            )
+                        )
                     )
             if len(actions) >= minimum:
                 streams.append(actions)

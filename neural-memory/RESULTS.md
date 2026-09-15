@@ -4333,3 +4333,54 @@ because the downloader filtered to successes — so this corpus carries no task-
 and cannot address the Phase 65 question. Failure flags came out as zero for it, a bug in the
 tool-result matching rather than a property of the data. Held-out is by stream within one dataset;
 transfer *to* LongMemEval was not measured, so "domain-specific" is shown in one direction.
+
+# Phase 69: at scale the outcome question answers itself, in the negative
+
+The failure flags in Phase 68 came out zero because these traces carry no `tool_call_id` on the
+result — a tool message holds only `content`, `reasoning_content`, `think` and `tool_calls`. The
+transcript alternates strictly, so matching each result to the oldest waiting call recovers them:
+26,071 failures in 124,291 actions.
+
+That makes Phases 65 to 67 repeatable at ten times the scale and across 1,326 repositories instead of
+one user. They do not repeat.
+
+| Signal | Claude stream (272 failures) | **Open-SWE (26,071 failures)** |
+| --- | ---: | ---: |
+| Novelty | 0.5797, resolved | **0.5105, not resolved** |
+| Best clustering baseline | 0.5820 | **0.6925** |
+| Similarity-weighted outcome retrieval | 0.6012 | 0.6387 |
+
+| Comparison, Open-SWE | Difference | 95% interval |
+| --- | ---: | --- |
+| Outcome retrieval minus best clustering | **-0.0538** | [-0.0877, -0.0202] |
+| Retrieval and novelty, minus clustering and novelty | **-0.0392** | [-0.0725, -0.0077] |
+
+**Retrieval is now resolved *worse* than a counter.** Phase 67 found it indistinguishable from
+recency-decayed failure rate; at scale it is behind by 0.054, and adding novelty does not rescue it.
+
+**And novelty does not replicate at all.** Phase 65's one link between memory and a real outcome —
+that an unfamiliar action predicts the next one failing — reads 0.5105 and unresolved here. It was a
+property of 272 failures in one person's sessions.
+
+## What this answers
+
+The question left open since Phase 33, and restated at the end of Phase 68, was whether the proxy
+this project optimises has any connection to something consequential. Two facts now sit together, both
+measured at proper scale:
+
+- The trained read beats a hard pick on the proxy by **+0.1194** (Phase 68).
+- On the only real outcome available, similarity-based retrieval is **-0.0538 behind a counter**.
+
+Those are not in tension; they are the answer. **Getting better at surfacing the item that matches the
+next five actions does not help predict whether the next action fails, and the machinery that does it
+actively hurts there.** What predicts failure is how often things have lately been failing, which
+needs no memory of content at all.
+
+## Interpretation boundary
+
+The failure label is keyword-derived — "error", "traceback", "no such file" and two others in the
+first 2,000 characters of a result — and fires on 21% of actions against 2.3% on Claude's structured
+`is_error`. Agents read source code that mentions errors, so this label is noisy and its absolute
+AUCs are not comparable with Phase 67's. What it supports is the ordering, which noise attenuates
+rather than inverts, and the ordering is resolved. A structured failure field for these traces, if one
+exists in the full dataset rather than the downloaded subset, would settle the magnitudes.
