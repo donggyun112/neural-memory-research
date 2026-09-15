@@ -4729,3 +4729,124 @@ resemblance is not underpowered, it is pointed the wrong way.
 likely reason. Mean-pooled last-layer states with a 64-token cap, one layer and one pooling choice out
 of many — a different layer could behave differently, though it would have to reverse a gap that grew
 rather than shrank. The oracle is unchanged at +0.2722 ahead, so nothing here closes the real gap.
+
+# Phase 76: the acting model's action vectors sit in a cone, and it does not explain phase 75
+
+Phase 75 measured similarity in Qwen's own hidden states and found it *worse* than in BGE's, which is
+the opposite of what the representation hypothesis predicted. Before accepting that, one property of
+mean-pooled hidden states had to be ruled out: they are anisotropic — they occupy a narrow cone rather
+than spreading over the sphere — and inside a cone the nearest neighbour is chosen mostly by the
+direction every vector shares, not by content.
+
+The cone is there, and it is severe.
+
+| quantity | value |
+|---|---|
+| mean pairwise cosine, raw Qwen action vectors | **0.8757** |
+| mean pairwise cosine after removing the shared direction | **0.0424** |
+| cosine between the memory summaries of two *unrelated* trajectories, raw | **0.9818** |
+| the same, centred | **0.0616** |
+
+So in the raw space one trajectory's entire history is 0.98 from another trajectory's entire history.
+Any measurement that needs to tell them apart has almost no contrast to work with.
+
+## It changes nothing
+
+`eval_action_intervention.py` gained `--centre`, which subtracts the mean action vector before
+normalising, and the Phase 75 comparison was re-run unchanged otherwise.
+
+| random over similarity, Qwen space | difference | 95% interval |
+|---|---|---|
+| raw (phase 75) | +0.1693 | [+0.0878, +0.2557] |
+| centred | **+0.1808** | [+0.0866, +0.2928] |
+
+Removing the shared direction does not rescue similarity selection; if anything it costs it slightly
+more, though the intervals overlap heavily and the difference is not worth a claim. Every other
+ordering is intact: summary over similarity +0.2195, summary over recency +0.1758, oracle over summary
++0.2846, and the outcome split still resolves nothing on any condition.
+
+**Phase 75 stands, and its explanation is not an artefact of the cone.** Similarity loses to random
+because alike is the wrong criterion, not because the geometry made alike unmeasurable.
+
+## Interpretation boundary
+
+Mean-centring is the cheapest of the standard corrections; whitening or removing the top few principal
+components could go further. But the correction taken here moves the typical pair from 0.87 to 0.04,
+which is most of the distance available, and the gap it was supposed to close instead widened.
+
+# Phase 77: memory as a bias on the computation fails, and the pilot that said otherwise was too small
+
+Every phase since 70 has injected memory the same way: choose stored actions, render them as text,
+paste them into the prompt. Phase 75 argued the problem is that channel — a selected item competes with
+recency for the same tokens, so the better the selection the more it duplicates. The fly does not use
+that channel either. Kenyon cells drive MBONs, the MBON ensemble biases behaviour, and nothing is
+selected or inserted into the input.
+
+`eval_activation_memory.py` adds the memory to the residual stream at one layer and leaves the prompt
+untouched. No training, no weights: a forward hook and a scale. Three readouts, each with its control.
+
+| source | what it is |
+|---|---|
+| `memory` | mean of the stored actions — the spread summary with every item a channel |
+| `associative` | `(K q) K` over the whole history — the fly's `W q`, no selection |
+| `sparse` | the same after expansion into 2,048 cells with 64 active — KC keys, dense values |
+| `noise` | a random unit vector, same size |
+| `foreign_*` | the same readout taken from **another trajectory's** history |
+
+`foreign` is the comparison that matters. `noise` only asks whether direction matters at all; `foreign`
+asks whether *this* history matters or merely a plausible one.
+
+## Two defects had to be cleared first
+
+A unit vector added to a residual stream of norm ~50 does nothing, so the scale is a fraction of the
+hidden state's own norm rather than an absolute size. And in the raw space all three readouts returned
+the same vector — mean-versus-associative cosine 0.9999 — because of the cone Phase 76 measured, which
+also made `foreign` identical to `memory` and the control vacuous. Centring fixed both.
+
+## The result at 280 positions
+
+Nothing helps. Every bias raises the action NLL, and larger biases hurt more.
+
+| comparison | @0.05 | @0.15 | @0.30 |
+|---|---|---|---|
+| memory over foreign | +0.0008 no | +0.0039 no | +0.0232 no |
+| associative over foreign_associative | −0.0086 no | −0.0243 no | −0.0231 no |
+| sparse over foreign_sparse | −0.0071 no | −0.0191 no | −0.0131 no |
+| sparse over memory | −0.0011 no | −0.0022 no | −0.0346 no |
+| memory over noise | +0.0045 no | +0.0218 no | **+0.0722 resolved** |
+
+Only `memory over noise` at the largest scale resolves, and it says the weakest possible thing: a
+direction drawn from the data damages the computation less than a random one. It does not say the
+direction carries this history. The comparison that would say that — own against foreign — is
+unresolved at every scale and in every readout, with point estimates at or below zero.
+
+The fly's sparse expansion does not rescue it either. `sparse over memory` is negative throughout, so
+the Kenyon-cell coding that was load-bearing in the familiarity line buys nothing here.
+
+## A 16-position pilot reported the opposite, and was reported as a signal
+
+Before the full run, the same script at 16 positions gave `sparse over foreign_sparse` +0.0680
+[+0.0070, +0.1374], resolved, and it was written up as the first trajectory-specific signal this
+channel had produced. At 280 positions the same quantity is −0.0191. The sign reversed. The interval
+at n=16 was not wrong about its own sample; the sample was too small to carry the claim, and reporting
+it before the full run was the error.
+
+## Why this failed, which was foreseeable
+
+The vector was built by an encoder and inserted into a coordinate system the model built for itself.
+Activation steering works when the direction is *found by contrast* inside the model's own states —
+the difference between the mean state under behaviour A and under behaviour B — because that
+difference is expressed in the model's terms. An externally encoded vector is, to the model, noise
+with structure. The `memory over noise` result is exactly that and no more: structured noise damages
+less than unstructured noise.
+
+This does not rule out memory as a bias on the computation. It rules out memory as an *untrained*
+bias. A direction obtained by contrast, or a projection learned through the frozen model, is a
+different experiment and the one this result points to.
+
+## Interpretation boundary
+
+One layer (14 of 28), one injection shape (a constant added at every token position), one model. A
+bias applied only at the final position, or at several layers, or scaled per token, are all untested.
+None of those would change that own and foreign are indistinguishable, which is a property of the
+vector rather than of where it was added.

@@ -64,6 +64,12 @@ def main() -> None:
         help="channels the memory is compressed into; the fly's ratio is 34 to 2,000",
     )
     parser.add_argument("--warmup", type=int, default=32)
+    parser.add_argument(
+        "--centre",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="remove the shared direction before measuring similarity",
+    )
     parser.add_argument("--max-length", type=int, default=4096)
     parser.add_argument("--device", choices=("cpu", "mps"), default="mps")
     parser.add_argument("--seed", type=int, default=7)
@@ -79,6 +85,12 @@ def main() -> None:
     streams, _ = open_swe_streams(args.traces, minimum=args.min_calls, limit=args.limit)
     payload = torch.load(args.features, map_location="cpu", weights_only=True)
     turns = F.normalize(payload["turns"], dim=-1)
+    if args.centre:
+        # A generator's mean-pooled hidden states occupy a narrow cone — actions
+        # average 0.87 cosine to each other — so the nearest neighbour is chosen
+        # mostly by the direction every action shares. Removing it takes the
+        # typical pair to 0.04 and lets content decide.
+        turns = F.normalize(turns - turns.mean(0), dim=-1)
     offsets = payload["offsets"]
     usable = min(len(streams), len(offsets) - 1, args.trajectories)
 
