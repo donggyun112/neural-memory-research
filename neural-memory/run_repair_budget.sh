@@ -21,6 +21,7 @@ MODEL="${MODEL:-haiku}"
 TURNS="${TURNS:-12}"
 SECOND="${SECOND:-15}"
 AGENT="claude -p {prompt} --model $MODEL --max-turns $TURNS \
+  --mcp-config '{\"mcpServers\":{}}' --strict-mcp-config \
   --output-format stream-json --verbose \
   --allowedTools Read Edit Write Grep Glob \"Bash(uv run:*)\""
 

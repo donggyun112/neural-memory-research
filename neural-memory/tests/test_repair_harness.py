@@ -74,10 +74,14 @@ def test_a_prompt_full_of_shell_syntax_reaches_the_agent_whole():
         'Notes:\n- Bash grep -n "^UNSATISFIABLE" tests/t.py\n'
         "- Bash python3 << 'EOF'\n- Bash ls | head -20 && echo $HOME\n"
     )
-    command = "printf %s {prompt}".format(prompt=shlex.quote(prompt))
-    finished = subprocess.run(command, shell=True, capture_output=True, text=True)
+    # The agent command carries JSON of its own, so substitution is plain
+    # replacement; str.format would read `{"mcpServers":{}}` as a field.
+    template = """printf %s {prompt} --mcp-config '{"mcpServers":{}}'"""
+    command = template.replace("{prompt}", shlex.quote(prompt))
+    finished = subprocess.run(command.split(" --mcp-config")[0], shell=True, capture_output=True, text=True)
     assert finished.returncode == 0
     assert finished.stdout == prompt
+    assert '{"mcpServers":{}}' in command
 
 
 def test_a_green_suite_with_edited_tests_is_not_a_repair():

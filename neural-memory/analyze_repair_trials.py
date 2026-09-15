@@ -45,6 +45,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("trials", type=Path, nargs="+", help="one or more outcome files")
     parser.add_argument("--baseline", default="none", help="condition every gain is measured from")
+    parser.add_argument(
+        "--control",
+        default="random",
+        help="second reference: isolates how items are chosen from having items at all",
+    )
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
@@ -82,11 +87,19 @@ def main() -> None:
     report: dict[str, dict] = {}
     for endpoint, sign in endpoints:
         print(f"\n{endpoint}: positive favours the first condition")
-        pairs = (
-            [(other, args.baseline) for other in columns if other != args.baseline]
-            if args.baseline in columns
-            else list(combinations(columns, 2))
-        )
+        if args.baseline not in columns:
+            pairs = list(combinations(columns, 2))
+        else:
+            pairs = [(other, args.baseline) for other in columns if other != args.baseline]
+            # Against `none` a condition is credited for the notes existing at
+            # all — more text in the prompt, whatever it says. Against `random`
+            # the text is held constant and only the choice of lines differs,
+            # which is the quantity every selection rule claims to improve.
+            pairs += [
+                (other, args.control)
+                for other in columns
+                if other not in (args.control, args.baseline)
+            ]
         for treatment, control in pairs:
             gap = sign * (columns[treatment][endpoint] - columns[control][endpoint])
             low, high = interval(gap)

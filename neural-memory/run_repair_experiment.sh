@@ -14,7 +14,13 @@ MODEL="${MODEL:-haiku}"
 FIRST="${FIRST:-20}"      # round one tasks: enough actions for a note block
 SECOND="${SECOND:-15}"    # round two tasks: staged, extend only if it looks alive
 KEEP="${KEEP:-12}"        # lines in a note block
+# The agent must not inherit the operator's MCP servers. With them it spends its
+# turns on ToolSearch loading tool schemas, and a note block full of concrete
+# Bash commands short-circuits that hunt — so the memory appears to repair bugs
+# when what it repaired was tool discovery in one particular environment. At a
+# tight budget that alone moved the baseline from 5/15 to 13/15.
 AGENT="claude -p {prompt} --model $MODEL --max-turns 25 \
+  --mcp-config '{\"mcpServers\":{}}' --strict-mcp-config \
   --output-format stream-json --verbose \
   --allowedTools Read Edit Write Grep Glob \"Bash(uv run:*)\""
 

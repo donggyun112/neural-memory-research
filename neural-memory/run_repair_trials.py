@@ -185,8 +185,12 @@ def main() -> None:
                 # shell string they close the argument early and the command dies
                 # before it starts — silently, in zero seconds, with an empty
                 # transcript that reads as "the agent did nothing".
+                # Plain replacement, not str.format: the agent command carries
+                # JSON of its own (`--mcp-config '{"mcpServers":{}}'`) and format
+                # reads those braces as replacement fields.
+                command = args.agent.replace("{prompt}", shlex.quote(prompt))
                 subprocess.run(
-                    args.agent.format(prompt=shlex.quote(prompt), repo=workspace),
+                    command.replace("{repo}", str(workspace)),
                     shell=True,
                     cwd=workspace,
                     stdout=stream,
