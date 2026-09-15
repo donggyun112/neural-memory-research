@@ -4165,3 +4165,57 @@ unlabelled, and that is most of what a memory would be for. Codex was not measur
 are inferred from output text rather than recorded, and the bootstrap over ten thousand of them did
 not finish. Novelty and failure could share a common cause — unfamiliar territory is both novel and
 error-prone for reasons having nothing to do with memory — and nothing here separates those.
+
+# Phase 66: remembering how it went, and the baseline that had to be beaten
+
+Phase 65 pointed at a different object: not "which stored item is most relevant" but "have I done
+something like this, and did it go badly". That is retrieval weighted by outcome, and it has one
+baseline that decides whether it is an idea at all. **Failures might simply cluster in time**, in
+which case the share of the last sixteen actions that failed carries everything and similarity adds
+nothing.
+
+11,917 positions, 272 failures, memory window 256, everything read strictly before the action being
+predicted:
+
+| Signal | AUC | 95% interval |
+| --- | ---: | --- |
+| Share of the last 16 actions that failed | 0.5571 | [0.5195, 0.5950] |
+| Novelty (Phase 65) | 0.5797 | [0.5345, 0.6241] |
+| Similarity-weighted average of past outcomes | 0.6012 | [0.5566, 0.6442] |
+| **Both together** | **0.6105** | [0.5649, 0.6533] |
+
+Paired, on shared resamples, which is the comparison those overlapping intervals cannot make:
+
+| Comparison | Difference | 95% interval |
+| --- | ---: | --- |
+| Outcome retrieval minus clustering | +0.0442 | [+0.0000, +0.0868], marginal |
+| Outcome retrieval minus novelty | +0.0215 | [-0.0346, +0.0808], not resolved |
+| **Outcome retrieval plus novelty, minus novelty** | **+0.0308** | **[+0.0098, +0.0522]** |
+
+**Remembering what went wrong adds something beyond noticing that things are going wrong**, though
+the margin over the clustering baseline sits exactly on zero at its lower bound and should be called
+marginal rather than established. What is resolved is that outcome retrieval and novelty are
+complementary: adding the first to the second gains +0.0308, and neither subsumes the other.
+
+The combination reaches 0.6105 on a real recorded outcome. That is a weak predictor, and it is the
+strongest link to anything consequential that this project has produced in sixty-six phases.
+
+## Why this is a different object from what came before
+
+Everything from Phase 31 onward asked which stored item to surface, and Phase 65 showed that quantity
+carries no outcome information at all — the similarity signals sit *below* chance. This asks what the
+memory implies about what is about to happen, which needs the memory to store outcomes rather than
+only content, and it works where the other did not.
+
+That is worth saying plainly: the sixty phases of work on retrieval quality are not what produced
+this. A memory holding one extra bit per item — how it went — outperforms all of it against a real
+label.
+
+## Interpretation boundary
+
+The same 272 failures as Phase 65, with the same concentration and the same blindness to actions that
+succeeded but should not have been taken. The clustering baseline uses a sixteen-action window chosen
+without searching, and a better-tuned version of it could close the marginal +0.0442. Nothing is
+trained here; these are fixed formulas over embeddings, so the comparison is between hand-built
+signals and not between learned systems. And the causal question from Phase 65 stands untouched:
+unfamiliar territory may be error-prone for reasons that have nothing to do with memory.
