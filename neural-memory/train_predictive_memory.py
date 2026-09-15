@@ -136,6 +136,12 @@ def main() -> None:
     parser.add_argument("--horizon", type=int, default=5)
     parser.add_argument("--warmup", type=int, default=32)
     parser.add_argument("--foils", type=int, default=99)
+    parser.add_argument(
+        "--foil-ceiling",
+        type=float,
+        default=2.0,
+        help="drop foils this close to the target; 2.0 keeps every one",
+    )
     parser.add_argument("--distant", type=int, default=64)
     parser.add_argument("--rank", type=int, default=32)
     parser.add_argument("--context", type=int, default=1, help="recent turns forming the cue")
@@ -258,10 +264,18 @@ def main() -> None:
                     position = usable[slot]
                     memory = eval_turns[start:position]
                     future = eval_futures[position]
-                    foils = eval_pool[
-                        torch.randperm(len(eval_pool), generator=evaluation)[: args.foils]
+                    drawn = eval_pool[
+                        torch.randperm(len(eval_pool), generator=evaluation)[: args.foils * 3]
                     ]
-                    candidates = torch.cat([future.unsqueeze(0), eval_futures[foils]])
+                    # Phase 61: on a repetitive corpus half the foils are the
+                    # target, and a tie is scored as a hit, so a reader that
+                    # separates nothing reads as perfect.
+                    kept = drawn[(eval_futures[drawn] @ future) < args.foil_ceiling][
+                        : args.foils
+                    ]
+                    if len(kept) < args.foils // 2:
+                        continue
+                    candidates = torch.cat([future.unsqueeze(0), eval_futures[kept]])
                     best = int((memory @ future).argmax())
                     reads = {
                         "trained": model(
@@ -311,8 +325,15 @@ def main() -> None:
                 continue
             position = usable[int(torch.randint(len(usable), (1,), generator=training))]
             memory = turns[start:position]
-            foils = pool[torch.randperm(len(pool), generator=training)[: args.foils]]
-            candidates = torch.cat([futures[position].unsqueeze(0), futures[foils]])
+            drawn = pool[torch.randperm(len(pool), generator=training)[: args.foils * 3]]
+            # A foil identical to the target asks for an impossible
+            # discrimination, and its gradient can only be destructive.
+            kept = drawn[(futures[drawn] @ futures[position]) < args.foil_ceiling][
+                : args.foils
+            ]
+            if len(kept) < args.foils // 2:
+                continue
+            candidates = torch.cat([futures[position].unsqueeze(0), futures[kept]])
             read = model(
                 memory,
                 futures[position].unsqueeze(0)

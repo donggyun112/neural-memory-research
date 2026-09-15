@@ -3948,3 +3948,59 @@ that the Codex conclusions cannot stand as written and that the Claude direction
 larger effect. The offline collapse of -0.3544 has not been re-measured with clean foils either, so
 whether training on action streams works at all is now an open question rather than a settled
 failure.
+
+# Phase 62: with real foils, the transfer holds and training is worth more than reported
+
+Phase 61 left the transfer question genuinely open. Re-running it with foils that are not copies of
+the answer, five seeds:
+
+| Setting | Trained minus blend | Blend minus hard | Trained minus hard |
+| --- | --- | --- | --- |
+| LongMemEval, in-domain | **+0.0214** [+0.0187, +0.0242] | +0.0082 [+0.0060, +0.0106] | **+0.0296** |
+| Claude action stream, transfer | **+0.0121** [+0.0070, +0.0169] | +0.0238 [+0.0190, +0.0288] | **+0.0359** |
+| Codex action stream, transfer | +0.0002, not resolved | +0.0007 [+0.0002, +0.0012] | **+0.0009** |
+
+**Phase 54 is reversed.** Its headline was that transfer to a different agent fails at -0.0230. With
+real foils the same measurement is +0.0009, resolved and positive. The negative sign was the blend
+penalty that duplicate foils manufacture, and Phase 61 showed that penalty flipping on its own.
+
+**And training is worth more than any phase reported.** The learned transform contributes +0.0214
+in-domain and +0.0121 on the Claude transfer, both resolved, against the +0.0085 of Phase 45. That
+increase is not the foil fix — LongMemEval was always clean — it is the configuration those later
+phases established: context 8, sixteen heads, 470 conversations, 6,000 steps.
+
+## The corrected state of the one working result
+
+| Claim | Status |
+| --- | --- |
+| A self-supervised future target gives usable supervision with no annotation | 229,245 positions |
+| A trained read beats an untrained hard pick in-domain | +0.0296, resolved |
+| The learned transform, separated from the blend, contributes | +0.0214, resolved |
+| It transfers to a near domain, another agent's tools under the same user | +0.0359, resolved |
+| It transfers to a far domain, a different agent entirely | +0.0009, resolved but negligible |
+| Distance to the best single item in memory | 0.3464 against 0.2320 in-domain |
+
+The far-domain number is the honest one to quote as the limit: the read neither helps nor hurts on
+Codex, and what little it does there is the blend rather than the learning. Whether that is domain
+distance or the corpus's repetitiveness is not separated.
+
+## What this session's corrections add up to
+
+Six configuration or measurement defects were reported as findings and then caught: hand-set
+constants (Phase 29), a metric containing its own write (36), a softmax temperature (45), a learning
+rate (52), a missing blend control (59), and foils that were copies of the answer (61). Four of the
+six inverted a conclusion. Two of them — the temperature and the foils — would have made a broken
+system look like a working one rather than the reverse.
+
+The pattern is not that the mechanisms were bad. Every effect measured in this project is between
+0.001 and 0.04, and every defect above was worth more than that. **The measurements dominate the
+mechanisms at this scale**, which is the most transferable thing here: an effect of 0.02 needs the
+baseline to differ from the treatment in exactly one way, and that has to be checked rather than
+assumed each time the setting changes.
+
+## Interpretation boundary
+
+Everything above is one encoder, one self-supervised target, and a proxy metric — ranking a future
+centroid among ninety-nine foils — that has never been connected to anything a user would notice.
+Phase 33 retired the only endpoint that tried. The effects are real, resolved, and small, and nothing
+here establishes that a memory built this way would change an agent's behaviour.
