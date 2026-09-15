@@ -4004,3 +4004,57 @@ Everything above is one encoder, one self-supervised target, and a proxy metric 
 centroid among ninety-nine foils — that has never been connected to anything a user would notice.
 Phase 33 retired the only endpoint that tried. The effects are real, resolved, and small, and nothing
 here establishes that a memory built this way would change an agent's behaviour.
+
+# Phase 63: online adaptation does work, and Phase 60 tested two points
+
+Phase 60 concluded that "there is no setting tried in which it moves and helps", which was accurate
+about what had been tried and was then written as though it were a property of online adaptation. Two
+learning rates were tried, 3e-4 and 1e-2, and they bracket the answer rather than containing it. The
+online runs also trained and evaluated against the foils Phase 61 found to be half answers on one
+corpus and partly duplicated on the other, so the gradient itself was polluted.
+
+Both fixed, five seeds on the Claude action stream:
+
+| Learning rate | Attention moved | Online minus blend, dirty foils | Online minus blend, clean foils |
+| --- | ---: | --- | --- |
+| 3e-4 | 0.0028 | +0.0003, not resolved | +0.0001, not resolved |
+| **3e-3** | **0.0866** | +0.0013, not resolved | **+0.0040** [+0.0013, +0.0067] |
+| 1e-2 | 0.3972 | -0.0295 | -0.0166 [-0.0228, -0.0105] |
+| 3e-2 | 0.6559 | -0.1073 | -0.0917 [-0.1003, -0.0833] |
+
+**There is a setting where the read moves and helps.** At 3e-3 it attends somewhere different on 8.7%
+of positions and gains +0.0040, resolved. Below that it does not move; above it, it moves too much
+and the damage grows monotonically. It is an inverted U, and Phase 60 sampled only its two tails.
+
+The foil pollution mattered too: at the rate that works, the dirty-foil measurement reads +0.0013 and
+unresolved. Both causes were needed to hide it.
+
+## What this costs the earlier phases
+
+Phase 60's retraction of Phases 55–58 stands in substance — those phases attributed to adaptation an
+effect that was the blend, and the blend is still doing most of the work here, +0.0262 against
+adaptation's +0.0040. What does not stand is the sentence that online adaptation actively harms
+whenever it changes anything. It harms when it changes too much.
+
+That also revises Phase 56 again. Batching and replay were described there as helping, then in Phase
+60 as merely freezing a harmful component. With a working rate they are doing neither: the useful
+regime is a movement rate, and the stabilisers are one way of reaching it.
+
+## The honest size of it
+
+| Component, Claude action stream, clean foils | Effect |
+| --- | --- |
+| Blending instead of picking one item | **+0.0262** [+0.0217, +0.0304] |
+| Online adaptation at the rate that works | **+0.0040** [+0.0013, +0.0067] |
+| Online adaptation at ten times that rate | -0.0917 |
+
+Adaptation is real and is a sixth of the blend. A system built on this would get most of its value
+from averaging several memories rather than selecting one, and a little more from learning on the
+stream, and would be destroyed by learning slightly too fast.
+
+## Interpretation boundary
+
+Four rates on one corpus with one optimiser. The peak is somewhere near 3e-3 and has not been
+located; the useful window's width is unknown and could be narrow enough to be impractical, since one
+order of magnitude past it costs twenty times what it gains. Nothing here was run on Codex with clean
+foils, and the movement measure still counts only changes in the top-scoring item.
