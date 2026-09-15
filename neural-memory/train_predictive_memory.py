@@ -155,6 +155,12 @@ def main() -> None:
         type=Path,
         help="evaluate on a different corpus than the one trained on",
     )
+    parser.add_argument(
+        "--exclude-largest",
+        type=int,
+        default=0,
+        help="drop the N biggest transfer sessions, which are this project's own",
+    )
     parser.add_argument("--steps", type=int, default=3000)
     parser.add_argument("--learning-rate", type=float, default=1e-3)
     parser.add_argument("--weight-decay", type=float, default=0.0)
@@ -185,6 +191,34 @@ def main() -> None:
     # handful of sessions would repeat Phase 48 -- so it is used only here.
     if args.transfer_features:
         eval_turns, eval_offsets, eval_futures, eval_pool = load(args.transfer_features)
+        if args.exclude_largest:
+            # Three sessions hold a third of the action stream and they are this
+            # project's own. A transfer claim that only survives with them in is
+            # a claim about one afternoon's work, not about transfer.
+            sizes = (eval_offsets[1:] - eval_offsets[:-1]).tolist()
+            biggest = sorted(
+                range(len(sizes)), key=lambda index: -sizes[index]
+            )[: args.exclude_largest]
+            kept = [index for index in range(len(sizes)) if index not in set(biggest)]
+            pieces = [
+                eval_turns[int(eval_offsets[index]) : int(eval_offsets[index + 1])]
+                for index in kept
+            ]
+            eval_turns = torch.cat(pieces)
+            eval_offsets = torch.tensor(
+                [0, *torch.cumsum(torch.tensor([len(piece) for piece in pieces]), 0).tolist()]
+            )
+            eval_futures = torch.zeros_like(eval_turns)
+            usable = torch.zeros(len(eval_turns), dtype=torch.bool)
+            for index in range(len(eval_offsets) - 1):
+                start, stop = int(eval_offsets[index]), int(eval_offsets[index + 1])
+                for position in range(start, stop - args.horizon):
+                    eval_futures[position] = eval_turns[
+                        position + 1 : position + 1 + args.horizon
+                    ].mean(0)
+                    usable[position] = True
+            eval_futures = F.normalize(eval_futures, dim=-1)
+            eval_pool = torch.nonzero(usable).flatten()
     else:
         eval_turns, eval_offsets, eval_futures, eval_pool = turns, offsets, futures, pool
     eval_count = len(eval_offsets) - 1

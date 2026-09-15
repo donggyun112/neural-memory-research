@@ -3432,3 +3432,54 @@ best of what was tried and may not be the best available. The transfer corpus is
 three dominating, so "does not transfer" here means "does not transfer to this", and a second transfer
 target would make the claim much stronger. Nothing about the in-domain ordering between linear and
 tuned non-linear is resolved.
+
+# Phase 53: the transfer is not three sessions
+
+Phase 52's boundary named the obvious way its transfer result could be hollow: three sessions hold a
+third of the action stream, and those three are this project's own. A transfer claim that only holds
+with them in is a claim about one afternoon of work.
+
+Dropping them, and then more, with the linear read trained on all 470 conversations:
+
+| Transfer corpus | Trained minus hard pick | Positions |
+| --- | --- | ---: |
+| All 34 sessions | **+0.0116** [+0.0060, +0.0171] | 10,513 |
+| Without the largest 3 | **+0.0082** [+0.0022, +0.0141] | 9,144 |
+| Without the largest 6 | **+0.0093** [+0.0028, +0.0156] | 7,732 |
+| Without the largest 10 | **+0.0084** [+0.0015, +0.0154] | 6,086 |
+
+All four resolved. Removing the sessions that could have produced the effect does not remove the
+effect; it shrinks it by about a quarter and leaves it clear of zero. The read trained on
+conversations about restaurants and pets improves action selection on other people's shell sessions,
+and the sessions this project generated are not what is carrying it.
+
+## Training data improves transfer, not just fit
+
+Phase 50 measured this transfer at +0.0061 with the read trained on 233 conversations for 3,000
+steps. The same measurement on 470 conversations and 6,000 steps gives **+0.0116**, nearly double.
+More training data does not only fit the training corpus better; it generalises further out of
+domain. That is the opposite behaviour to the non-linear read of Phase 52, which gained in-domain and
+lost the transfer entirely, and it is the clearest evidence so far that the linear read is learning
+something about memory rather than about LongMemEval.
+
+## Where this leaves the one working result
+
+| Property | Status |
+| --- | --- |
+| Beats an untrained hard pick in-domain | +0.0314 [+0.0250, +0.0378], 7,202 positions |
+| Transfers to a different corpus | +0.0116 [+0.0060, +0.0171], 10,513 positions |
+| Survives removing the dominant transfer sessions | +0.0084 at ten dropped, still resolved |
+| Improves with training data, in-domain and out | 0.2397 to 0.2497; +0.0061 to +0.0116 |
+| Distance to the ceiling on the action stream | 0.3462 against 0.7075 |
+
+It is small in every one of those rows. What it is not is fragile, and none of the other twenty
+mechanisms measured in this project reached even the second row.
+
+## Interpretation boundary
+
+The transfer target is still one corpus of one person's sessions, and dropping large sessions removes
+volume rather than adding independence — the remaining sessions come from the same user and the same
+tools. A genuinely independent target, another user's logs or another agent's traces, is what would
+turn this from "not an artefact of three sessions" into "transfers". The ceiling row is the one worth
+staring at: 0.3462 against 0.7075 means that whatever is working here is capturing under half of what
+is available on the stream this system is actually for.
