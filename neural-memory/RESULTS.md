@@ -4219,3 +4219,63 @@ without searching, and a better-tuned version of it could close the marginal +0.
 trained here; these are fixed formulas over embeddings, so the comparison is between hand-built
 signals and not between learned systems. And the causal question from Phase 65 stands untouched:
 unfamiliar territory may be error-prone for reasons that have nothing to do with memory.
+
+# Phase 67: the baseline was unsearched, and once searched the idea disappears
+
+Phase 66 said its clustering baseline used an unsearched sixteen-action window and that a better one
+could close the +0.0442. Searching it:
+
+| Clustering baseline | AUC |
+| --- | ---: |
+| Last 16 actions (Phase 66's choice) | 0.5571 |
+| Last 128 | 0.5818 |
+| **Recency-decayed, half-life 128** | **0.5820** |
+
+The baseline gains 0.025 from being tuned at all, and the comparison it was losing goes with it:
+
+| Comparison | Difference | 95% interval |
+| --- | ---: | --- |
+| Outcome retrieval minus best clustering | +0.0192 | [-0.0185, +0.0544], **not resolved** |
+| Outcome retrieval and novelty, minus best clustering | +0.0285 | [-0.0243, +0.0815], not resolved |
+
+And the one result Phase 66 called resolved survives only in a form that empties it. Adding outcome
+retrieval to novelty gains +0.0308 — but adding *clustering* to novelty gains +0.0294, and the two
+combinations are indistinguishable:
+
+| Comparison | Difference | 95% interval |
+| --- | ---: | --- |
+| Outcome retrieval and novelty, minus clustering and novelty | **+0.0014** | [-0.0159, +0.0190] |
+
+**Similarity-weighted retrieval of past outcomes contributes nothing.** What works is novelty plus
+any measure of how often things have been failing lately, and the similarity part of the memory is
+not doing any of it. Phase 66's sentence — "remembering what went wrong adds something beyond
+remembering that things are going wrong" — is false as stated.
+
+## What is actually left
+
+| Signal | AUC | Needs retrieval? |
+| --- | ---: | --- |
+| Novelty, one scalar summary of the memory | 0.5797 | no |
+| Recency-decayed failure rate | 0.5820 | no |
+| Both | 0.6091 | no |
+| Both, plus similarity-weighted outcomes | 0.6105 | yes, and worth +0.0014 |
+
+Two signals predict a real outcome at 0.609 combined, and **neither of them requires retrieving
+anything.** Novelty is the mean similarity to the memory as a whole; the failure rate needs only a
+counter. Sixty-seven phases of work on what to store and what to surface are not implicated in the
+only result that touches a consequence.
+
+## The seventh, and the same shape
+
+Phase 29's constants, 36's metric, 45's temperature, 52's learning rate, 59's missing control, 61's
+foils, and now a baseline left unsearched for one phase. Four of the seven were caught by tuning the
+baseline rather than the treatment. The asymmetry is the lesson: effort went into the proposal every
+time, and the comparison was decided by the thing nobody was tuning.
+
+## Interpretation boundary
+
+The clustering baseline was searched on the same data it is evaluated on, so its 0.5820 is optimistic
+and the true gap to outcome retrieval is somewhat larger than the point estimates say — which makes
+the negative conclusion safer, not weaker. Everything is still 272 failures on one corpus with no
+training anywhere, so this rules out a hand-built similarity-weighted signal rather than the idea that
+a learned one could work.

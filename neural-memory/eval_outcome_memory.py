@@ -66,7 +66,11 @@ def main() -> None:
     )
     parser.add_argument("--warmup", type=int, default=16)
     parser.add_argument("--memory-window", type=int, default=256)
-    parser.add_argument("--recent", type=int, default=16, help="window for the clustering baseline")
+    parser.add_argument(
+        "--recent-windows",
+        default="4,8,16,32,64,128,256",
+        help="windows searched for the clustering baseline, resolved in its favour",
+    )
     parser.add_argument("--temperature", type=float, default=0.05)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
@@ -76,7 +80,21 @@ def main() -> None:
     offsets = payload["offsets"]
     failed = payload["failed"].float()
 
-    names = ["novelty", "recent_failures", "outcome_retrieval", "outcome_plus_novelty"]
+    # The clustering baseline gets its window searched and a decayed variant,
+    # because it is the one that decides whether similarity adds anything and a
+    # single unsearched setting is not a fair opponent.
+    windows = [int(value) for value in args.recent_windows.split(",")]
+    names = [
+        "novelty",
+        *[f"recent_{window}" for window in windows],
+        *[f"decayed_{half}" for half in (8, 32, 128)],
+        "outcome_retrieval",
+        "outcome_plus_novelty",
+        # If clustering combined with novelty gains as much, then
+        # similarity-weighted retrieval contributes nothing even in company, and
+        # the combination result is about recency rather than about resemblance.
+        "clustering_plus_novelty",
+    ]
     signals: dict[str, list[float]] = {name: [] for name in names}
     labels: list[float] = []
     for index in range(len(offsets) - 1):
@@ -92,11 +110,21 @@ def main() -> None:
             novelty = -float(scores.mean())
             labels.append(float(failed[position + 1]))
             signals["novelty"].append(novelty)
-            signals["recent_failures"].append(float(outcomes[-args.recent :].mean()))
+            for window in windows:
+                signals[f"recent_{window}"].append(float(outcomes[-window:].mean()))
+            age = torch.arange(len(outcomes) - 1, -1, -1, dtype=torch.float)
+            for half in (8, 32, 128):
+                decay = 0.5 ** (age / half)
+                signals[f"decayed_{half}"].append(
+                    float((decay * outcomes).sum() / decay.sum())
+                )
             signals["outcome_retrieval"].append(retrieval)
             # Phase 65's signal and this one answer different questions, so a
             # sum of the two is worth reporting separately.
             signals["outcome_plus_novelty"].append(retrieval + novelty)
+            signals["clustering_plus_novelty"].append(
+                signals["decayed_128"][-1] + novelty
+            )
 
     labels = np.array(labels, dtype=bool)
     print(
@@ -120,10 +148,19 @@ def main() -> None:
     cap = min(len(positive), 400), min(len(negative), 400)
     print(f"\n{'comparison':>44} {'difference':>11} {'95% interval':>22}")
     head_to_head = {}
+    # The baseline's best row, chosen on this same data, which is generous to it.
+    clustering = max(
+        (name for name in names if name.startswith(("recent_", "decayed_"))),
+        key=lambda name: results[name]["auc"],
+    )
+    print(f"best clustering baseline: {clustering} at {results[clustering]['auc']:.4f}")
+    results["best_clustering"] = clustering
     for left, right in (
-        ("outcome_retrieval", "recent_failures"),
-        ("outcome_retrieval", "novelty"),
+        ("outcome_retrieval", clustering),
+        ("outcome_plus_novelty", clustering),
         ("outcome_plus_novelty", "novelty"),
+        ("clustering_plus_novelty", "novelty"),
+        ("outcome_plus_novelty", "clustering_plus_novelty"),
     ):
         first, second = np.array(signals[left]), np.array(signals[right])
         gaps = []
