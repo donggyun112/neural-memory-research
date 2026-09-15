@@ -77,7 +77,7 @@ def main() -> None:
     usable = min(len(streams), len(offsets) - 1, args.trajectories)
 
     generator = np.random.default_rng(args.seed)
-    names = ["no_memory", "recency", "similarity", "oracle"]
+    names = ["no_memory", "recency", "similarity", "summary", "oracle"]
     prompts: dict[str, list[str]] = {name: [] for name in names}
     answers: list[str] = []
     for index in range(usable):
@@ -95,10 +95,30 @@ def main() -> None:
         # The oracle looks at the action being predicted, which no reader can do.
         future = turns[start + position]
         ahead = (turns[start : start + len(earlier)] @ future).numpy()
+        # The fly has no selection step. About two thousand Kenyon cells converge
+        # on thirty-four output neurons whose ensemble represents the answer
+        # combinatorially, and long-term retrieval needs all of them, each
+        # carrying part of the context. Nothing decides which memory is relevant.
+        # The equivalent here is to compress the whole memory into `keep`
+        # channels and show one representative of each, rather than to pick the
+        # `keep` items that look relevant -- which is exactly the decision Phase
+        # 71 found undetermined.
+        block = turns[start : start + len(earlier)].numpy()
+        centres = block[np.linspace(0, len(block) - 1, args.keep).astype(int)]
+        for _ in range(8):
+            assignment = np.argmax(centres @ block.T, axis=0)
+            for channel in range(args.keep):
+                members = block[assignment == channel]
+                if len(members):
+                    centres[channel] = members.mean(axis=0)
+            norms = np.linalg.norm(centres, axis=1, keepdims=True)
+            centres = np.divide(centres, norms, out=centres, where=norms > 0)
+        summary = sorted({int(np.argmax(block @ centre)) for centre in centres})
         picks = {
             "no_memory": [],
             "recency": earlier[-args.keep :],
             "similarity": sorted(np.argsort(-similarity)[: args.keep].tolist()),
+            "summary": summary,
             "oracle": sorted(np.argsort(-ahead)[: args.keep].tolist()),
         }
         for name in names:
@@ -152,9 +172,11 @@ def main() -> None:
     print(f"\n{'comparison':>28} {'difference':>11} {'95% interval':>22}")
     head_to_head = {}
     for left, right in (
+        ("summary", "similarity"),
+        ("summary", "recency"),
+        ("summary", "no_memory"),
         ("similarity", "recency"),
-        ("similarity", "no_memory"),
-        ("oracle", "similarity"),
+        ("oracle", "summary"),
     ):
         gap = per_item[right] - per_item[left]
         maker = np.random.default_rng(7)

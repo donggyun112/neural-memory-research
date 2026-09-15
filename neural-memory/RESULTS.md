@@ -4495,3 +4495,66 @@ Agreement with the oracle's top pick is a strict criterion; a selector could imp
 without matching that argmax, and the behavioural evaluation was not re-run on this selector because
 it had nothing to test. BGE-small embeddings of one-line action renderings throughout, so the
 representation is the same one Phase 47 found wanting.
+
+# Phase 72: the fly does not select, and neither should this
+
+Three independent measurements now say the same thing: which stored item will matter is not
+determined at the moment the choice must be made — Phase 19 at write time, Phase 47 at the cue, Phase
+71 on behaviour, where a selector could not fit even its training data. Every one of those is a
+failure of *selection*.
+
+Reading the mushroom body literature again, the fly does not have that problem because it has no
+selection step. About two thousand Kenyon cells converge onto thirty-four output neurons of
+twenty-one types; the ensemble represents the answer combinatorially rather than by picking a
+memory; long-term retrieval requires *all* of the output types, each carrying part of the context;
+and parallel pathways are expressed additively.
+([Aso et al., eLife 2014](https://elifesciences.org/articles/04580);
+[Yang et al., PLOS Genetics 2016](https://journals.plos.org/plosgenetics/article?id=10.1371%2Fjournal.pgen.1006061))
+
+So the fly's answer to "which memory should surface" is that the question is wrong. Everything is
+compressed into a small output and the whole of it biases behaviour.
+
+The equivalent condition, on the Phase 70 instrument: instead of the four memory items that look
+relevant, compress the entire memory into four channels by repeated centroid assignment and inject
+the real action nearest each centre. A picture of everything done so far, not a selection of what
+matters.
+
+| Condition | Gain over no memory | Win rate |
+| --- | ---: | ---: |
+| Recency | +0.1511 | 0.548 |
+| Similarity | +0.1030 | 0.668 |
+| **Summary of the whole memory** | **+0.2378** | 0.524 |
+| Oracle | +0.4865 | 0.828 |
+
+| Comparison | Difference | 95% interval |
+| --- | ---: | --- |
+| **Summary over similarity** | **+0.1348** | [+0.0275, +0.2555] |
+| **Summary over recency** | **+0.0867** | [+0.0055, +0.1853] |
+| **Summary over no memory** | **+0.2378** | [+0.1262, +0.3663] |
+| Similarity over recency | -0.0481 | not resolved |
+| Oracle over summary | +0.2487 | [+0.2061, +0.2908] |
+
+**Not selecting beats selecting, resolved.** The summary is 2.3 times what similarity achieves and
+closes about half the distance from similarity to the oracle. It is the first thing the fly line has
+produced that wins rather than describes — and it is a structural claim, not a component. Sparse
+coding and the saturating mark were both borrowed as parts and both lost; "do not have a selection
+step" is an argument about architecture and it holds.
+
+It also explains the three failures rather than adding a fourth. They were not failures of
+mechanism. They were a mechanism solving a problem that a memory does not have to pose.
+
+## The one thing to be careful about
+
+The summary wins on the mean and barely on the count: win rate 0.524 against similarity's 0.668. It
+helps less often and much more when it helps. That is the same mean/count disagreement that retracted
+Phase 33, and the reason it is reported as a result here is that the paired bootstrap resolves —
+Phase 33's did not. But a reader who needs a win most of the time rather than a large average gain
+should read the win rate column instead.
+
+## Interpretation boundary
+
+Four channels because the other conditions use four items, chosen for comparability rather than
+searched; the fly's ratio is thirty-four outputs to two thousand cells, which would be a different
+number here. The oracle is still +0.2487 ahead, so half the gap remains and nothing here is close to
+a ceiling. 250 trajectories, one generator, and `resolved` is 1 on every row, so this measures
+likelihood of a known-good action and not task success.
