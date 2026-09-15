@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shlex
 import shutil
 import subprocess
 import time
@@ -129,7 +130,7 @@ def main() -> None:
     parser.add_argument(
         "--agent",
         required=True,
-        help="command run per task; {prompt} and {repo} are substituted",
+        help="command per task; {prompt} is substituted already quoted, so do not quote it",
     )
     parser.add_argument("--condition", required=True, help="label for this arm")
     parser.add_argument("--memory", type=Path, help="text pasted into the prompt")
@@ -179,8 +180,13 @@ def main() -> None:
         started = time.time()
         with transcript.open("w") as stream:
             try:
+                # The note block is made of real shell commands the earlier agent
+                # ran, quotes and redirections included. Interpolated raw into a
+                # shell string they close the argument early and the command dies
+                # before it starts — silently, in zero seconds, with an empty
+                # transcript that reads as "the agent did nothing".
                 subprocess.run(
-                    args.agent.format(prompt=prompt, repo=workspace),
+                    args.agent.format(prompt=shlex.quote(prompt), repo=workspace),
                     shell=True,
                     cwd=workspace,
                     stdout=stream,

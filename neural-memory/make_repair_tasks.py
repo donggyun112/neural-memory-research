@@ -160,7 +160,11 @@ def main() -> None:
             continue
         tasks.append(
             Task(
-                name=f"{path.stem}-{line}",
+                # Two rules can fire on the same line — a comparison flip and a
+                # boundary shift, say — so the line alone does not name a task.
+                # Colliding names silently collapse into one when the outcomes
+                # are keyed for pairing, and a condition quietly loses a task.
+                name=f"{path.stem}-{line}-{len(tasks)}",
                 path=str(path.relative_to(repo)),
                 line=line,
                 before=before,

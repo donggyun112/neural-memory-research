@@ -60,6 +60,26 @@ def test_a_missing_transcript_is_no_actions(tmp_path):
     assert tool_calls(tmp_path / "absent.jsonl") == []
 
 
+def test_a_prompt_full_of_shell_syntax_reaches_the_agent_whole():
+    """Note blocks are made of shell commands the earlier agent ran.
+
+    Interpolated raw into a shell string, their quotes close the argument early
+    and the agent command dies in zero seconds with an empty transcript — which
+    reads downstream as "the agent made no tool calls" rather than as a failure.
+    """
+    import shlex
+    import subprocess
+
+    prompt = (
+        'Notes:\n- Bash grep -n "^UNSATISFIABLE" tests/t.py\n'
+        "- Bash python3 << 'EOF'\n- Bash ls | head -20 && echo $HOME\n"
+    )
+    command = "printf %s {prompt}".format(prompt=shlex.quote(prompt))
+    finished = subprocess.run(command, shell=True, capture_output=True, text=True)
+    assert finished.returncode == 0
+    assert finished.stdout == prompt
+
+
 def test_a_green_suite_with_edited_tests_is_not_a_repair():
     trial = Trial(
         task="version-12",

@@ -27,20 +27,32 @@ import numpy as np
 
 from neural_memory.spread_memory import spread
 
-NOISE = re.compile(r"^(TodoWrite|Task)\b", re.I)
+# TodoWrite and Task are bookkeeping rather than repair. ToolSearch and the MCP
+# calls come from the operator's own environment leaking into the agent's
+# session and say nothing about this repository.
+# `mcp__` needs no word boundary after it: an underscore is a word character, so
+# `\b` never matches between it and the server name that follows.
+NOISE = re.compile(r"^(?:mcp__|(?:TodoWrite|Task|ToolSearch|Skill)\b)", re.I)
 
 
 def load_actions(workspace: Path, trials: list[dict], solved_only: bool) -> list[tuple[str, str]]:
-    """(task, action) pairs from every run's own log."""
+    """(task, action) pairs from every run's own log, with paths made portable.
+
+    Each round one run happened in its own directory, so its actions name
+    absolute paths that do not exist anywhere in round two. Passed on unchanged
+    they are worse than no note at all: they point a later agent at files it
+    cannot open, and it spends turns finding that out.
+    """
     actions = []
     for trial in trials:
         if solved_only and not trial["resolved"]:
             continue
-        log = workspace / trial["task"] / "agent-actions.log"
+        home = workspace / trial["task"]
+        log = home / "agent-actions.log"
         if not log.exists():
             continue
         for line in log.read_text().splitlines():
-            text = line.strip()
+            text = line.strip().replace(f"{home}/", "").replace(str(home), ".")
             if text and not NOISE.match(text):
                 actions.append((trial["task"], text))
     return actions
@@ -137,7 +149,27 @@ def main() -> None:
 
 
 def demo() -> None:
-    """Each rule must return the requested count without repeating an index."""
+    """Notes must be portable, and each rule must return the count it was asked for."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as folder:
+        workspace = Path(folder)
+        home = workspace / "version-12"
+        home.mkdir()
+        (home / "agent-actions.log").write_text(
+            f"Read {home}/src/packaging/version.py\n"
+            "ToolSearch select:mcp__keymem__recall\n"
+            "mcp__lean-ctx__ctx_read src/packaging/version.py\n"
+            "Bash uv run pytest tests -q\n"
+        )
+        actions = load_actions(workspace, [{"task": "version-12", "resolved": True}], True)
+    # The round one directory must not survive into the note, and the operator's
+    # own tooling must not be passed off as something the repair required.
+    assert actions == [
+        ("version-12", "Read src/packaging/version.py"),
+        ("version-12", "Bash uv run pytest tests -q"),
+    ], actions
+
     vectors = np.random.default_rng(0).normal(size=(40, 8)).astype(np.float32)
     vectors /= np.linalg.norm(vectors, axis=1, keepdims=True)
     cue = vectors[3]
