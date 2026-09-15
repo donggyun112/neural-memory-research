@@ -3644,3 +3644,57 @@ One corpus, three seeds, and a stabiliser sweep chosen by hand rather than searc
 intervals are computed on the positions in each bin and the bins are not independent of one another,
 since a read that drifted early is the same read being scored late. Nothing here was run on Codex,
 where Phase 55 found no early gain to protect in the first place.
+
+# Phase 57: the curve was comparing different streams, and the result is better than it looked
+
+Phase 56 ended pointing at total distance travelled. Bounding it directly — rescaling the shift's
+factors whenever their norms' product exceeds a budget — changes nothing at all: a budget of 0.03
+gives the same numbers to the fourth decimal as no budget. The constraint never binds, so the read is
+not travelling far, and the drift hypothesis is dead.
+
+What was wrong is the curve itself. Streams have different lengths, so a short one contributes to the
+early bins and not the late ones, and each bin holds a different set of streams. The static baseline
+gives it away: 0.4027, 0.3898, 0.3575, 0.4016, 0.4266 across bins, moving around far more than a
+fixed population should. The curve was confounding "more updates" with "different stream".
+
+## Corrected, with the population fixed
+
+Every stream required to reach the last bin, Claude action stream, five seeds:
+
+| Stream length held | Streams | Whole stream | 25–50 updates |
+| ---: | ---: | --- | --- |
+| 100 positions | 24 | **+0.0066** [+0.0020, +0.0112] | **+0.0157** [+0.0067, +0.0247] |
+| 200 positions | 17 | +0.0019 [-0.0022, +0.0060], not resolved | **+0.0254** [+0.0136, +0.0376] |
+| 400 positions | 6 | -0.0268 [-0.0336, -0.0200] | -0.0022, not resolved |
+
+**Over a hundred-action stream, a memory that started from nothing and adapted online beats a static
+one, +0.0066, resolved.** That is the whole-stream number, not a favourable slice of it, and there is
+no pre-training and nothing carried in from anywhere.
+
+The 25–50 gain is real and survives the correction at +0.0157 and +0.0254. Its absence in the
+400-position row is a power problem rather than a contradiction: only six streams reach that far, so
+that bin holds 450 positions against 2,125, and its interval spans +/- 0.024.
+
+The degradation is also real and now correctly sized. At 200 positions the 100–200 bin is -0.0066
+rather than Phase 55's -0.0689; an order of magnitude of that apparent collapse was short streams
+leaving the population, not the read getting worse.
+
+## The state of it
+
+| Stream length | Net effect of adapting online |
+| --- | --- |
+| 100 actions | positive, +0.0066, resolved |
+| 200 actions | break-even, +0.0019, not resolved |
+| 400 actions | negative, -0.0268, resolved |
+
+A memory that learns on its own stream is ahead early, holds to about two hundred actions, and falls
+behind after. That is a working mechanism with a known expiry, which is a more useful object than
+either Phase 55's "gains then collapses" or Phase 56's "nearly break-even overall" — both of which
+were reading a confounded curve.
+
+## Interpretation boundary
+
+Fixing the population costs streams: 24 at length 100, 6 at 400, from 34. The long-stream rows are
+therefore thin, and the 400-position conclusion rests on six sessions of one user. What would settle
+the expiry is more long streams, which the Codex corpus has — 200 sessions, many of them long — and
+where Phase 55 found no early gain to begin with, so it tests the decay without the benefit.

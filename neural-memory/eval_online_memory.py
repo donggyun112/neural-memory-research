@@ -43,6 +43,25 @@ class OnlineRead(nn.Module):
         weights = F.softmax(memory @ shifted / self.temperature, dim=0)
         return F.normalize(weights @ memory, dim=0)
 
+    @torch.no_grad()
+    def constrain(self, budget: float) -> None:
+        """Keep the shift inside a ball around the identity.
+
+        Phase 56 left a residual that lowering the rate does not touch, which
+        points at total distance travelled rather than step size. How far the
+        shift can move is bounded by the product of its factors' norms, so
+        rescaling both when that product exceeds a budget bounds the distance
+        directly. A memory that does not drift is one with a limit on how far it
+        can get from what it started as.
+        """
+        if budget <= 0:
+            return
+        size = float(self.left.norm() * self.right.norm())
+        if size > budget:
+            scale = (budget / size) ** 0.5
+            self.left.mul_(scale)
+            self.right.mul_(scale)
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -55,7 +74,16 @@ def main() -> None:
     parser.add_argument("--weight-decay", type=float, default=0.0)
     parser.add_argument("--batch", type=int, default=1, help="positions averaged per update")
     parser.add_argument("--replay", type=int, default=0, help="earlier positions added per update")
+    parser.add_argument(
+        "--budget", type=float, default=0.0, help="cap on how far the shift may travel; 0 is free"
+    )
     parser.add_argument("--max-positions", type=int, default=400, help="per stream")
+    parser.add_argument(
+        "--min-length",
+        type=int,
+        default=1,
+        help="skip streams shorter than this, so every bin holds the same streams",
+    )
     parser.add_argument("--seeds", default="7,17,27")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
@@ -87,7 +115,11 @@ def main() -> None:
         for index in range(streams):
             start, stop = int(offsets[index]), int(offsets[index + 1])
             usable = range(start + args.warmup, stop - args.horizon)
-            if not usable:
+            # Short streams appear in the early bins and not the late ones, so a
+            # curve over bins compares different populations and confounds "more
+            # updates" with "different stream". Requiring every stream to reach
+            # the last bin fixes the population across the whole curve.
+            if len(usable) < args.min_length:
                 continue
             # A fresh read per stream: nothing is carried in from anywhere.
             model = OnlineRead(turns.shape[-1], args.rank)
@@ -155,6 +187,7 @@ def main() -> None:
                         optimiser.zero_grad(set_to_none=True)
                         torch.stack(losses).mean().backward()
                         optimiser.step()
+                        model.constrain(args.budget)
                     pending.clear()
         rows.append(
             {
