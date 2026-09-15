@@ -118,6 +118,10 @@ def main() -> None:
         # has had hundreds of updates, so the position each score came from is
         # kept and the comparison is reported as a curve.
         online_hits, static_hits, steps_taken = [], [], []
+        ceiling_hits, blend_hits = [], []
+        # One frozen copy for the whole run: the untrained blend is the same
+        # function everywhere, so it needs no per-stream state.
+        frozen = OnlineRead(turns.shape[-1], args.rank)
         for index in range(streams):
             start, stop = int(offsets[index]), int(offsets[index + 1])
             usable = range(start + args.warmup, stop - args.horizon)
@@ -159,6 +163,19 @@ def main() -> None:
                     fixed = memory[int((memory @ turns[position]).argmax())]
                     scored = candidates @ fixed
                     static_hits.append(float((scored > scored[0]).sum() == 0))
+                    # The best item actually in memory, chosen with the future in
+                    # hand. Headroom is this minus the static pick, and it is the
+                    # quantity the gain is supposed to track.
+                    scored = candidates @ memory[int((memory @ future).argmax())]
+                    ceiling_hits.append(float((scored > scored[0]).sum() == 0))
+                    # The same read at initialisation, never updated. It blends
+                    # where the static pick takes one item, so without it
+                    # "online adaptation helps" cannot be separated from
+                    # "blending helps" -- and a longer horizon makes the target
+                    # an average of more actions, which favours a blend on its
+                    # own.
+                    scored = candidates @ frozen(memory, turns[position])
+                    blend_hits.append(float((scored > scored[0]).sum() == 0))
                 steps_taken.append(step)
                 seen.append(position)
                 pending.append(position)
@@ -213,6 +230,9 @@ def main() -> None:
                 "_online": online_hits,
                 "_static": static_hits,
                 "_steps": steps_taken,
+                "ceiling": float(np.mean(ceiling_hits)),
+                "blend": float(np.mean(blend_hits)),
+                "_blend": blend_hits,
             }
         )
 
@@ -226,8 +246,33 @@ def main() -> None:
     print(f"{streams} streams, {rows[0]['positions']} scored positions per seed, "
           f"{len(rows)} seeds, no pre-training and nothing transferred\n")
     print(f"{'reader':>26} {'top-1':>9}")
+    ceiling = float(np.mean([row["ceiling"] for row in rows]))
+    blend = np.concatenate([np.array(row["_blend"]) for row in rows])
     print(f"{'static hard pick':>26} {static.mean():9.4f}")
+    print(f"{'untrained blend':>26} {blend.mean():9.4f}")
     print(f"{'online, adapting as it goes':>26} {online.mean():9.4f}")
+    print(f"{'best single item (ceiling)':>26} {ceiling:9.4f}")
+    print(f"{'headroom':>26} {ceiling - static.mean():9.4f}")
+    # The decomposition the horizon sweep demands: how much of the gain is
+    # blending rather than adapting.
+    for label, left, right in (
+        ("blend minus static", blend, static),
+        ("online minus blend", online, blend),
+    ):
+        difference = left - right
+        maker = np.random.default_rng(7)
+        draws = [
+            difference[maker.integers(0, len(difference), len(difference))].mean()
+            for _ in range(3000)
+        ]
+        edge_low, edge_high = (
+            float(np.percentile(draws, 2.5)),
+            float(np.percentile(draws, 97.5)),
+        )
+        print(
+            f"{label:>26} {difference.mean():+9.4f}  [{edge_low:+.4f}, {edge_high:+.4f}]"
+            f" {'resolved' if edge_low > 0 or edge_high < 0 else 'no'}"
+        )
     print(
         f"\nonline minus static: {gap.mean():+.4f}  [{low:+.4f}, {high:+.4f}]"
         f" {'resolved' if low > 0 or high < 0 else 'NOT resolved'}"
@@ -272,6 +317,7 @@ def main() -> None:
         row.pop("_online", None)
         row.pop("_static", None)
         row.pop("_steps", None)
+        row.pop("_blend", None)
     output = {
         "config": vars(args),
         "per_seed": rows,

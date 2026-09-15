@@ -3757,3 +3757,75 @@ both rows further. The Claude rows still rest on 24 and 6 streams. The headroom 
 results together and is consistent with all of them, but it has never been manipulated directly — no
 experiment here varies headroom while holding the corpus fixed, which is what would turn it from a
 pattern into a cause.
+
+# Phase 59: the online memory was never adapting — Phases 55 to 58 retracted
+
+Headroom can be manipulated within a corpus by changing the horizon: a one-action target is a
+specific thing a single stored item can match, a twenty-action target is a broad average. Sweeping it
+falsifies the headroom story outright.
+
+| Corpus, horizon | Headroom | Online minus static |
+| --- | ---: | ---: |
+| Claude, 1 | 0.4472 | +0.0045 |
+| Claude, 5 | 0.3218 | +0.0092 |
+| Claude, 20 | 0.2499 | +0.0107 |
+| Codex, 1 | 0.1248 | -0.0169 |
+| Codex, 5 | 0.0767 | -0.0201 |
+| Codex, 20 | 0.0480 | **+0.0253** |
+
+The gain rises as headroom *falls*, and Codex turns strongly positive at its smallest headroom. What
+actually tracks the effect is the horizon, in both corpora.
+
+## And the reason is that nothing was adapting
+
+The online read blends over memory; the static baseline takes one item. A longer horizon makes the
+target an average of more actions, which favours a blend whether or not anything is learned. Phase 45
+had already separated those two on LongMemEval and the control was not carried across when the
+setting changed. Adding it back:
+
+| Corpus, horizon | Blend minus static | **Online minus blend** |
+| --- | ---: | --- |
+| Claude, 1 | +0.0046 [+0.0004, +0.0088] | **+0.0000**, not resolved |
+| Claude, 5 | +0.0089 [+0.0043, +0.0135] | +0.0003, not resolved |
+| Claude, 20 | +0.0104 [+0.0057, +0.0152] | +0.0003, not resolved |
+| Codex, 1 | -0.0142 [-0.0157, -0.0128] | -0.0027 [-0.0034, -0.0021] |
+| Codex, 5 | -0.0209 [-0.0225, -0.0192] | +0.0008 [+0.0002, +0.0013] |
+| Codex, 20 | +0.0253 [+0.0233, +0.0273] | +0.0001, not resolved |
+
+**Online adaptation contributes nothing.** The largest effect it has anywhere is -0.0027, and it is
+negative. Every number in Phases 55 through 58 was a softmax blend behaving differently from a hard
+argmax, measured against a baseline that differed in parameterisation as well as in training.
+
+## What that retracts
+
+- Phase 55's "a memory gains before it knows anything, +0.0141 within twenty-five updates" — the gain
+  is the blend, present at update zero, and the update count had nothing to do with it.
+- Phase 56's batching and replay results — those changed how the read drifted, and the drift was
+  moving a component that was contributing nothing.
+- Phase 57's expiry curve — real as a description of the blend under a growing memory, not as
+  anything about adaptation.
+- Phase 58's memory-window finding — likewise. Bounding the window helps the *blend*, which is still
+  a usable result but not the one that phase claimed.
+
+What survives is the horizon result, and it is clean: a blended read beats a single-item pick in
+proportion to how broad the target is, from +0.0046 at horizon 1 to +0.0104 at horizon 20 on Claude,
+and from -0.0142 to +0.0253 on Codex. That is a statement about selection versus averaging, measured
+on two corpora, with no learning involved anywhere.
+
+## The fifth time
+
+Phase 29 read hand-set constants as a dead component. Phase 36 read a metric containing its own write
+as a mechanism ranking. Phase 45's first draft read a softmax temperature as a training effect. Phase
+52 found a learning rate read as a statement about capacity. This is the fifth, and the worst, since
+it ran for four phases.
+
+The control that would have caught it existed in Phase 45 and was dropped when the experiment moved
+from offline to online. The rule that keeps being relearned: when the setting changes, the baselines
+have to move with it, and a baseline that differs from the treatment in two ways measures neither.
+
+## Interpretation boundary
+
+The frozen blend uses the same random initialisation as the adapting one, so the comparison is exact.
+`online minus blend` being unresolved at five of six settings is a statement that the effect is below
+about 0.001 there, not that it is exactly zero. Nothing here says online adaptation cannot work —
+only that this implementation of it, at every setting tried across four phases, did nothing.
