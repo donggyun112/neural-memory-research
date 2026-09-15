@@ -3533,3 +3533,66 @@ person's logs on one machine; a second *user* remains untested and would bear on
 than a second agent does. The negative result is large in confidence and small in size — two
 percentage points — so what it rules out is the claim that this read transfers, not the possibility
 that some read does.
+
+# Phase 55: a memory is not a pre-learned system, and it gains before it knows anything
+
+Every read in this project was fitted on one corpus, frozen, and carried elsewhere. Phase 54 measured
+that carrying and found it fails on a different agent. The right reading of that is not that the read
+is weak but that the question was wrong: a memory adapts while it runs, on the material it is
+actually seeing, and asking whether a frozen transform generalises tests a property memory is not
+supposed to have.
+
+So `eval_online_memory.py` removes both training corpus and transfer. Each stream gets its own read,
+starting at plain cosine, walking forward. Every position is scored **before** the update taken at it,
+so nothing the read is graded on has touched its weights. The baseline is the same hard cosine pick
+on the identical positions.
+
+## It gains immediately, then destroys itself
+
+Claude action stream, five seeds, no pre-training:
+
+| Updates seen | Positions | Static | Online | Difference | 95% interval |
+| --- | ---: | ---: | ---: | ---: | --- |
+| 0–25 | 4,250 | 0.4111 | 0.4252 | **+0.0141** | [+0.0059, +0.0219] |
+| 25–50 | 4,015 | 0.4065 | 0.4276 | **+0.0212** | [+0.0100, +0.0329] |
+| 50–100 | 6,345 | 0.3549 | 0.3556 | +0.0006 | not resolved |
+| 100–200 | 10,370 | 0.4014 | 0.3324 | -0.0689 | [-0.0784, -0.0593] |
+| 200–400 | 9,630 | 0.4207 | 0.2955 | **-0.1251** | [-0.1354, -0.1152] |
+
+**A memory that knew nothing at the start of the stream is ahead within twenty-five updates**, and
+the gain is resolved. That is the thing worth having, and it needs no corpus, no pre-training and
+nothing carried in from anywhere.
+
+It is also the shortest-lived result in this project. By a hundred updates it is gone, and by four
+hundred the read is a fifth worse than doing nothing. Averaged over the whole stream the number is
+-0.0512, which is what the first version of this measurement reported and which hides both halves of
+what is actually happening.
+
+## Anchoring does not fix it
+
+The shift is `UV^T` initialised at zero, so weight decay pulls toward zero and zero is the identity —
+decay is an anchor to plain cosine rather than generic shrinkage. It does almost nothing. At decay
+1.0 the 200–400 bin moves from -0.1192 to -0.1080, and the early bins do not change in the fourth
+decimal. The drift is not a magnitude the optimiser can be shrunk out of; single-position InfoNCE
+gradients are simply noisy enough that continued updating walks the parameters somewhere useless.
+
+## Where there is no headroom there is no early gain
+
+Codex shows no positive bin at all, -0.0295 in the first twenty-five updates and worsening from
+there. That fits Phase 54's account: a static pick already reaches 0.788 on the earliest Codex
+positions, close to the 0.815 ceiling, so there is nothing for adaptation to add and the same drift
+applies with none of the benefit.
+
+## What this leaves
+
+The mechanism is real and it is unstable. It appears in the regime the whole project was built for —
+no annotation, no pre-training, learning on the stream it is in — and the obstacle is not whether
+adaptation helps but that nothing stops it from continuing past the point where it did.
+
+## Interpretation boundary
+
+One optimiser, one rank, one temperature, and updates at every position. Whether the collapse is
+specific to per-position AdamW steps, or to this objective, is untested; batching several positions,
+replaying earlier ones, or stopping on a held-out signal are all standard answers that were not
+tried. The early gain is measured on one corpus where headroom exists and is absent on the one where
+it does not, so it is a statement about that regime rather than about streams in general.
