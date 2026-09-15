@@ -57,6 +57,12 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=1200, help="must match the artifact")
     parser.add_argument("--recent", type=int, default=6, help="steps of immediate context")
     parser.add_argument("--keep", type=int, default=4, help="memory items per condition")
+    parser.add_argument(
+        "--channels",
+        type=int,
+        default=4,
+        help="channels the memory is compressed into; the fly's ratio is 34 to 2,000",
+    )
     parser.add_argument("--warmup", type=int, default=32)
     parser.add_argument("--max-length", type=int, default=4096)
     parser.add_argument("--device", choices=("cpu", "mps"), default="mps")
@@ -77,7 +83,16 @@ def main() -> None:
     usable = min(len(streams), len(offsets) - 1, args.trajectories)
 
     generator = np.random.default_rng(args.seed)
-    names = ["no_memory", "recency", "similarity", "summary", "oracle"]
+    picker = np.random.default_rng(args.seed + 1000)
+    names = [
+        "no_memory",
+        "recency",
+        "similarity",
+        "summary",
+        "summary_weighted",
+        "random",
+        "oracle",
+    ]
     prompts: dict[str, list[str]] = {name: [] for name in names}
     answers: list[str] = []
     for index in range(usable):
@@ -104,21 +119,54 @@ def main() -> None:
         # `keep` items that look relevant -- which is exactly the decision Phase
         # 71 found undetermined.
         block = turns[start : start + len(earlier)].numpy()
-        centres = block[np.linspace(0, len(block) - 1, args.keep).astype(int)]
+        channels = max(1, min(args.channels, len(block)))
+        centres = block[np.linspace(0, len(block) - 1, channels).astype(int)].copy()
         for _ in range(8):
             assignment = np.argmax(centres @ block.T, axis=0)
-            for channel in range(args.keep):
+            for channel in range(channels):
                 members = block[assignment == channel]
                 if len(members):
                     centres[channel] = members.mean(axis=0)
             norms = np.linalg.norm(centres, axis=1, keepdims=True)
             centres = np.divide(centres, norms, out=centres, where=norms > 0)
-        summary = sorted({int(np.argmax(block @ centre)) for centre in centres})
+        sizes = np.array([int((assignment == channel).sum()) for channel in range(channels)])
+        nearest = [int(np.argmax(block @ centre)) for centre in centres]
+        # One representative per channel, largest channels first when there are
+        # more channels than slots.
+        summary = sorted({nearest[channel] for channel in np.argsort(-sizes)[: args.keep]})
+        # The fly expresses parallel pathways additively rather than picking one
+        # per pathway, so a channel standing for more of the memory should take
+        # more of the budget. Slots are allocated in proportion to channel size
+        # and filled with that channel's most central members.
+        weighted: list[int] = []
+        for channel in np.argsort(-sizes):
+            if len(weighted) >= args.keep:
+                break
+            share = max(1, round(args.keep * sizes[channel] / max(sizes.sum(), 1)))
+            members = np.flatnonzero(assignment == channel)
+            if not len(members):
+                continue
+            ranked = members[np.argsort(-(block[members] @ centres[channel]))]
+            weighted.extend(int(slot) for slot in ranked[: min(share, args.keep - len(weighted))])
+        weighted = sorted(set(weighted))
         picks = {
             "no_memory": [],
             "recency": earlier[-args.keep :],
             "similarity": sorted(np.argsort(-similarity)[: args.keep].tolist()),
             "summary": summary,
+            "summary_weighted": weighted,
+            # The compression result is flat across a sixteenfold range of
+            # channel counts and indifferent to how slots are allocated, which
+            # is what a spread-out sample of anything would look like. If four
+            # items drawn at random do as well, the finding is not that
+            # compression helps but that selecting by relevance hurts.
+            # Its own stream of numbers: drawing from the shared one shifted
+            # every later position choice, so adding this condition silently
+            # re-sampled the whole experiment and the comparison against the
+            # previous run was between different positions.
+            "random": sorted(
+                picker.choice(len(earlier), size=args.keep, replace=False).tolist()
+            ),
             "oracle": sorted(np.argsort(-ahead)[: args.keep].tolist()),
         }
         for name in names:
@@ -172,10 +220,10 @@ def main() -> None:
     print(f"\n{'comparison':>28} {'difference':>11} {'95% interval':>22}")
     head_to_head = {}
     for left, right in (
+        ("random", "similarity"),
+        ("summary", "random"),
         ("summary", "similarity"),
         ("summary", "recency"),
-        ("summary", "no_memory"),
-        ("similarity", "recency"),
         ("oracle", "summary"),
     ):
         gap = per_item[right] - per_item[left]

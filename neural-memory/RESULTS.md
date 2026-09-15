@@ -4558,3 +4558,67 @@ searched; the fly's ratio is thirty-four outputs to two thousand cells, which wo
 number here. The oracle is still +0.2487 ahead, so half the gap remains and nothing here is close to
 a ceiling. 250 trajectories, one generator, and `resolved` is 1 on every row, so this measures
 likelihood of a known-good action and not task success.
+
+# Phase 73: selecting by similarity is worse than selecting at random
+
+Phase 72 reported the summary beating similarity, resolved at every channel count from 2 to 32 and
+flat across all of them. Flat across a sixteenfold range is what a spread-out sample of anything would
+look like, so the control it needed was random selection, and it had not been run.
+
+Running it broke the result twice over. First, drawing the random items from the same generator
+shifted every later position choice, so adding the condition silently re-sampled the whole experiment
+and the two runs were comparing different positions. Second, on that new sample the summary's
+advantage over similarity read +0.0759 and unresolved, against +0.1408 and resolved before — entirely
+consistent with a Phase 72 interval whose lower bound was +0.0336, which had been read as settled.
+
+With the randomness separated and 900 trajectories rather than 250:
+
+| Condition | Gain over no memory | Win rate |
+| --- | ---: | ---: |
+| **Similarity** | **+0.1103** | 0.652 |
+| Recency | +0.1898 | 0.579 |
+| **Random** | **+0.2486** | 0.571 |
+| Summary, 16 channels | +0.2796 | 0.537 |
+| Summary, weighted allocation | +0.2804 | 0.550 |
+| Oracle | +0.5612 | 0.822 |
+
+| Comparison | Difference | 95% interval |
+| --- | ---: | --- |
+| **Random over similarity** | **+0.1383** | [+0.0828, +0.1970] |
+| Summary over similarity | +0.1694 | [+0.1093, +0.2309] |
+| Summary over recency | +0.0898 | [+0.0413, +0.1407] |
+| **Summary over random** | **+0.0310** | [+0.0026, +0.0615] |
+| Oracle over summary | +0.2816 | [+0.2577, +0.3061] |
+
+**Choosing memory by similarity is worse than choosing it at random**, by +0.1383 and resolved. It is
+the worst memory condition measured — behind recency, behind random, and less than a quarter of what
+the oracle gets. Sixty-nine phases of this project were spent improving a way of choosing that is
+beaten by not choosing.
+
+The likely mechanism is visible in the numbers: the most similar earlier actions are near-duplicates
+of what is happening now, so they carry nothing the recent context does not already have. Random items
+span the trajectory. Compression spans it more evenly still, which is worth a further +0.0310 —
+resolved, but small, with a lower bound of +0.0026.
+
+## What survives of Phase 72
+
+The direction does; the explanation does not. Phase 72 said compression wins. It is more accurate to
+say **similarity loses**, and that most of what the summary gains is available from any spread-out
+sample. The fly-derived claim was "do not have a selection step", and that holds in its strongest
+form: the structural feature is the absence of relevance-based selection, not the particular way of
+compressing.
+
+## The eighth
+
+A missing control, again, and a sample too small to support the word "resolved", again. Phase 72's
+interval lower bound was +0.0336; a result standing that close to zero needed either the control or
+the larger sample before it was written down as a finding, and it had neither.
+
+## Interpretation boundary
+
+900 trajectories, one generator, one prompt format, four items per condition, and the oracle is still
++0.2816 ahead so half the distance remains unexplained by any of these rules. `resolved` is 1 on every
+Open-SWE row, so this measures the likelihood of a known-good action rather than task success, and a
+memory that raises that likelihood while harming outcomes is not excluded. The win-rate column runs
+the other way from the mean throughout — similarity wins most often at 0.652 while gaining least —
+so a system needing to help on most steps rather than on average would read this table differently.
