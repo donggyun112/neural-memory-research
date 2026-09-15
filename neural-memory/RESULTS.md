@@ -4850,3 +4850,122 @@ One layer (14 of 28), one injection shape (a constant added at every token posit
 bias applied only at the final position, or at several layers, or scaled per token, are all untested.
 None of those would change that own and foreign are indistinguishable, which is a property of the
 vector rather than of where it was added.
+
+# Phase 78: an endpoint that runs the agent, and seven defects on the way to it
+
+Phase 74 left a limitation nothing since has touched. Memory raises the likelihood of the next action
+just as much on trajectories that failed to fix the bug (0.3148) as on ones that succeeded (0.2555),
+and the oracle cannot separate them either. A measurement that cannot tell a better agent from a
+better predictor of an agent cannot answer the question this project is asking, and every phase from
+70 to 77 optimised against it anyway.
+
+So the endpoint was replaced with one where success is a fact. `make_repair_tasks.py` mutates one
+covered line of a pure-python repository — `pypa/packaging`, 62,434 tests in 15 seconds — and keeps
+the result only if the suite notices. `run_repair_trials.py` hands the broken copy to an agent and
+runs the suite afterwards. `build_repair_memory.py` turns finished runs into the notes a later run is
+given, under the same spread/random/similarity rules phases 72 to 76 ranked on likelihood. Ninety
+tasks, split by module so that round one and round two never share a file: whatever round one learned
+has to survive the move to code it never saw.
+
+## The harness takes the agent's word for nothing
+
+| the question | what answers it |
+|---|---|
+| is the bug fixed? | pytest |
+| was the suite made green by editing it? | a diff against the pristine tests |
+| what did the agent do? | the tool calls in its event stream |
+
+The third is not caution for its own sake. Asked to log its own actions, one agent worked for 144
+seconds and reported two; the transcript shows twenty.
+
+## Round one: the failures are all budget, not capability
+
+Twenty tasks, no memory, a 25-turn budget.
+
+| | actions |
+|---|---|
+| 14 resolved | 8, 9, 11, 11, 13, 14, 14, 15, 16, 18, 23, 25, 25, 26 (median 14.5) |
+| 6 unresolved | 25, 25, 25, 25, 26, 38 |
+
+**Every failure ran out of turns.** Not one was an agent reaching a wrong conclusion. That makes the
+endpoint a budget-constrained success measure, which is the right shape for the hypothesis — reducing
+search is the whole of what a memory of past actions could do here.
+
+It also kills `repaired` as a graded endpoint: it is 0 for every failure and the full count for every
+success, so it is `resolved` times the task's blast radius and carries no separate information.
+
+## Round two at 25 turns resolves nothing
+
+Fourteen tasks common to every condition, after a name collision merged two.
+
+| condition | resolved | actions |
+|---|---|---|
+| none | 1.000 | 10.6 |
+| random | 1.000 | 11.4 |
+| spread | 1.000 | 11.4 |
+| similarity | 0.929 | 12.7 |
+
+| comparison | actions | 95% interval |
+|---|---|---|
+| random over none | −0.714 | [−4.857, +2.929] NOT resolved |
+| spread over none | −0.786 | [−3.857, +2.286] NOT resolved |
+| similarity over none | −2.071 | [−6.071, +1.786] NOT resolved |
+
+Every condition repaired every task, so `resolved` is a constant and only `actions` carries anything.
+Nothing is resolved there either. The module split sent the hard module (`_ranges.py`, which supplied
+six of round one's eight failures) to round one, leaving round two easy enough that the budget never
+bound.
+
+The one thing worth noting and not worth claiming: similarity is the only condition to lose a task and
+the only one to cost more than two extra actions. Phases 73 to 76 found selection by resemblance worse
+than selection at random on next-action likelihood; the sign agrees here. It is not resolved, so the
+agreement is a direction and not a replication.
+
+## Seven defects, and what each of them looked like from the outside
+
+Building the harness turned up seven defects before it produced a number worth
+keeping. They are listed because four of them presented as results rather than
+as errors, and because the pattern across them is sharper than any of them
+alone.
+
+| # | What it looked like | What it was |
+|---|---|---|
+| 1 | every run "edited the tests" | a recursive diff counting pytest's own `__pycache__` |
+| 2 | a 144-second run took 2 actions | the agent's self-reported log, which under-reported tenfold |
+| 3 | round two had no tasks | a module count compared against a task budget |
+| 4 | memory made the agent *slower* | notes carrying dead absolute paths from round one |
+| 5 | operator tooling inside the notes | `\b` after `mcp__` never matches; `_` is a word character |
+| 6 | 15 runs produced 14 paired tasks | two mutation rules on one line producing one task name |
+| 7 | the agent "made no tool calls" | shell quoting broken by the notes' own quotes; it never started |
+
+**Four of these passed a check.** Defect 3 shipped with a self-check asserting
+that the two rounds do not overlap and that round one is non-empty — both true
+when every task goes to round one. The check tested the wrong property, and the
+fix was to assert round two is populated, not to write more checks.
+
+**Three of them made a failure look like a measurement.** Defects 2, 4 and 7
+each produced a plausible number rather than an error. Defect 7 is the sharpest:
+an agent that never received its command writes an empty transcript, and an
+empty transcript parses to zero tool calls, which is exactly what an agent that
+did nothing would produce. The run cost nothing, finished in zero seconds, and
+reported a clean failure.
+
+**The no-memory baseline survived all of them.** Defects 4 and 7 only touch a
+run that is handed a note block, and the baseline is never handed one. Round one
+and the `none` condition ran correctly through three invalid rounds of the
+memory conditions, so every check that looked at the baseline said the harness
+was healthy. A control that cannot fail the way the treatment fails is not
+evidence the treatment was measured.
+
+The measurement discipline that came out of this is narrow and worth stating: the
+harness takes the agent's word for nothing. pytest decides whether the bug is
+fixed, a diff against the pristine tests decides whether the suite was made green
+by editing it, and the tool calls are read from the event stream rather than from
+anything the agent says about itself.
+
+## Interpretation boundary
+
+One repository, one model (Haiku), one budget, fourteen paired tasks. The ceiling is the binding
+limitation: with every condition at 100% the only endpoint with variance is a search-length measure on
+a sample far too small for its spread. A tighter budget on the same tasks and the same notes is the
+next measurement, and it changes only how much room the agent is given.
