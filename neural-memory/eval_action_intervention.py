@@ -82,6 +82,12 @@ def main() -> None:
     offsets = payload["offsets"]
     usable = min(len(streams), len(offsets) - 1, args.trajectories)
 
+    # One flag per stream: 1 fixed the bug, 0 did not. Until the corpus was
+    # re-downloaded without the resolved-only filter every row was a success, so
+    # raising the likelihood of the next action could not be told apart from
+    # modelling the agent. Split by this, the two are separable.
+    resolved = payload.get("resolved")
+    outcomes: list[int] = []
     generator = np.random.default_rng(args.seed)
     picker = np.random.default_rng(args.seed + 1000)
     names = [
@@ -178,6 +184,7 @@ def main() -> None:
                 )
             )
         answers.append(stream[position])
+        outcomes.append(int(resolved[index]) if resolved is not None else -1)
 
     if not answers:
         raise RuntimeError("no trajectory produced a usable position")
@@ -240,6 +247,42 @@ def main() -> None:
             f"{left + ' over ' + right:>28} {gap.mean():+11.4f}  [{low:+.4f}, {high:+.4f}]"
             f" {'resolved' if low > 0 or high < 0 else 'NOT resolved'}"
         )
+
+    labels = np.array(outcomes)
+    if {0, 1} <= set(labels.tolist()):
+        succeeded, failed_run = labels == 1, labels == 0
+        print(
+            f"\nsplit by outcome: {int(succeeded.sum())} trajectories fixed the bug,"
+            f" {int(failed_run.sum())} did not\n"
+        )
+        print(f"{'condition':>18} {'on fixed':>10} {'on unfixed':>12} {'difference':>12}")
+        split = {}
+        for name in names[1:]:
+            gap = baseline - per_item[name]
+            on_fixed, on_unfixed = float(gap[succeeded].mean()), float(gap[failed_run].mean())
+            maker = np.random.default_rng(7)
+            draws = [
+                gap[succeeded][maker.integers(0, int(succeeded.sum()), int(succeeded.sum()))].mean()
+                - gap[failed_run][
+                    maker.integers(0, int(failed_run.sum()), int(failed_run.sum()))
+                ].mean()
+                for _ in range(3000)
+            ]
+            low, high = float(np.percentile(draws, 2.5)), float(np.percentile(draws, 97.5))
+            split[name] = {
+                "on_fixed": on_fixed,
+                "on_unfixed": on_unfixed,
+                "difference": on_fixed - on_unfixed,
+                "low": low,
+                "high": high,
+            }
+            print(
+                f"{name:>18} {on_fixed:10.4f} {on_unfixed:12.4f}"
+                f" {on_fixed - on_unfixed:+12.4f}"
+                f"  [{low:+.4f}, {high:+.4f}]"
+                f" {'resolved' if low > 0 or high < 0 else 'no'}"
+            )
+        results["by_outcome"] = split
 
     usable_instrument = results["oracle"]["gain_over_no_memory"] > 0
     print(f"\ninstrument usable (oracle beats no memory): {usable_instrument}")

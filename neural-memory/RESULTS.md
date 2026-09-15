@@ -4622,3 +4622,64 @@ Open-SWE row, so this measures the likelihood of a known-good action rather than
 memory that raises that likelihood while harming outcomes is not excluded. The win-rate column runs
 the other way from the mean throughout — similarity wins most often at 0.652 while gaining least —
 so a system needing to help on most steps rather than on average would read this table differently.
+
+# Phase 74: the rule replicates, and the memory is modelling the agent rather than improving it
+
+Every behavioural measurement so far used trajectories that all fixed their bug, because the
+downloader filtered to `resolved=1`. That left the central ambiguity untouched: raising the likelihood
+of the next action could mean the memory helps the model behave well, or merely that it models *this
+agent* better, mistakes included.
+
+Re-downloading without the filter gives 2,500 trajectories across 1,101 repositories — 930 resolved,
+951 unresolved, 619 unlabelled — and 1,821 streams holding 206,293 actions.
+
+**The Phase 73 rule replicates on it**, on different trajectories from a different draw:
+
+| Comparison | Phase 73 | **Phase 74** |
+| --- | ---: | ---: |
+| Random over similarity | +0.1383 | **+0.1460** [+0.0960, +0.2027] |
+| Summary over random | +0.0310 | **+0.0452** [+0.0159, +0.0775] |
+| Summary over similarity | +0.1694 | **+0.1912** [+0.1355, +0.2512] |
+| Summary over recency | +0.0898 | **+0.1303** [+0.0850, +0.1818] |
+| Oracle over summary | +0.2816 | +0.2931 |
+
+All resolved, all slightly larger. Similarity remains the worst memory condition measured.
+
+## And the split says what the ambiguity was hiding
+
+296 of the scored trajectories fixed the bug and 353 did not. If memory were selectively helping good
+behaviour, it would help more on the first group:
+
+| Condition | Gain on fixed | Gain on unfixed | Difference |
+| --- | ---: | ---: | --- |
+| Recency | 0.1501 | 0.1282 | +0.0219, not resolved |
+| Similarity | 0.1008 | 0.0818 | +0.0190, not resolved |
+| Summary | 0.2555 | 0.3148 | **-0.0593**, not resolved |
+| Random | 0.2006 | 0.2648 | -0.0642, not resolved |
+| Oracle | 0.5463 | 0.6089 | -0.0626, not resolved |
+
+**Nothing resolves, and the point estimates for the three conditions that work lean the wrong way.**
+Memory raises the likelihood of the next action about equally whether that action belonged to a
+trajectory that fixed the bug or one that did not.
+
+So the +0.2885 means what the pessimistic reading said it might: **the memory makes the model a better
+predictor of this agent, not a better agent.** That is the distinction Phase 70 could not draw and
+this corpus was downloaded to settle.
+
+## What that costs, and what it does not
+
+It does not touch the comparison between rules. Similarity being worse than random, and spreading
+being better than both, are properties of the injected content and hold on two independent draws. A
+practitioner choosing how to fill a context window still has the result.
+
+It does remove the claim that any of this improves outcomes. Nothing measured here shows a memory
+making an agent more likely to fix a bug, and the one measurement able to see that says the effect is
+indistinguishable between success and failure.
+
+## Interpretation boundary
+
+296 against 353 trajectories is a thin split and the intervals run to about +/- 0.1, so a real
+selective effect smaller than that would not show. The unfixed trajectories may also be harder rather
+than worse-behaved, in which case a larger gain there is confounded with difficulty. Settling it needs
+either many more trajectories or an intervention that actually runs an agent, which needs a test
+harness this project does not have.

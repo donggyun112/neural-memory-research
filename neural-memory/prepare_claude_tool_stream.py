@@ -99,6 +99,34 @@ def codex_streams(root: Path, minimum: int, limit: int) -> tuple[list[list[str]]
     return streams, failures
 
 
+def open_swe_outcomes(path: Path, minimum: int, limit: int) -> list[int]:
+    """Whether each kept trajectory actually fixed the bug.
+
+    Until this corpus was downloaded with `--no-resolved-only` every row was a
+    success, so raising the likelihood of the next action could not be
+    distinguished from modelling the agent. With failures present the same
+    measurement splits: a memory that helps only where the trajectory succeeded
+    is doing something different from one that helps everywhere.
+    """
+    kept: list[int] = []
+    with path.open() as handle:
+        for line in handle:
+            if limit and len(kept) >= limit:
+                break
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            calls = sum(
+                len(message.get("tool_calls") or [])
+                for message in (row.get("messages") or [])
+                if isinstance(message, dict)
+            )
+            if calls >= minimum:
+                kept.append(int(row.get("resolved", -1)))
+    return kept
+
+
 def open_swe_streams(
     path: Path, minimum: int, limit: int
 ) -> tuple[list[list[str]], list[list[int]]]:
@@ -219,8 +247,10 @@ def main() -> None:
 
     from sentence_transformers import SentenceTransformer
 
+    outcomes: list[int] = []
     if args.format == "open_swe":
         streams, failures = open_swe_streams(args.root, args.min_calls, args.limit)
+        outcomes = open_swe_outcomes(args.root, args.min_calls, args.limit)
     elif args.format == "codex":
         streams, failures = codex_streams(args.root, args.min_calls, args.limit)
     else:
@@ -252,6 +282,8 @@ def main() -> None:
         "failed": torch.tensor(
             [flag for stream in failures for flag in stream], dtype=torch.bool
         ),
+        # One per stream: 1 fixed the bug, 0 did not, -1 unlabelled.
+        "resolved": torch.tensor(outcomes or [-1] * len(streams), dtype=torch.long),
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     torch.save(output, args.output)
