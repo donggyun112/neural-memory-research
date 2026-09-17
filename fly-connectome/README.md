@@ -1261,3 +1261,59 @@ held both degree sequences and the value multiset exactly.
 Before designing another task, measure whether there is block structure to exploit: do Kenyon cells
 partition by the compartment their MBONs sit in, more than a degree-preserving rewiring would give?
 If they do not, no task will separate these conditions and the valence result above is the ceiling.
+
+## Phase 39: there is block structure, and it does not protect a lesson
+
+Phase 38 ended with a question a task could not answer: is there any structure in KC-to-MBON for a
+task to exploit? `compartment_structure_probe.py` measures the wiring directly, no learning involved.
+
+| wiring | top-compartment share | compartments reached |
+|---|---:|---:|
+| real | 0.2642 | **7.31** |
+| rewired | 0.2898 | 9.90 |
+| random | 0.2999 | 9.37 |
+| even spread | 0.0625 | 16 |
+
+`reach: real over rewired` is **-2.59 [-2.59, -2.58] resolved**. A real Kenyon cell touches 2.6 fewer
+compartments than a rewiring holding every degree fixed. The structure is there, and it is selective:
+concentration is *lower* in the real wiring, so a cell does not favour one compartment — it picks a
+few and splits between them, which is what an axon running along one lobe and synapsing where it
+passes would produce.
+
+### The prediction that followed, and failed
+
+If a lesson lands in fewer compartments, two lessons should collide less.
+`interference_probe.py` stores lesson A, stores lesson B on top, and asks how much of A survives —
+as a ratio against each wiring's own A-alone score, so a wiring that holds less cannot look robust by
+having less to lose.
+
+| wiring | A alone | A after B | kept |
+|---|---:|---:|---:|
+| real | 0.9985 | 0.9521 | 0.9535 |
+| rewired | 0.9977 | 0.9556 | 0.9578 |
+| random | 1.0000 | 0.9871 | **0.9871** |
+
+`kept: real over rewired` is -0.0044 [-0.0116, +0.0033], **not resolved**. `kept: real over random` is
+-0.0336 [-0.0382, -0.0293], resolved against the real wiring. By the falsification fixed in advance,
+reaching fewer compartments buys no protection.
+
+The reasoning was wrong about where interference happens. Two lessons collide when the same Kenyon
+cells are active for both, and that is decided by the sparse code, not by the wiring; the wiring only
+decides which MBONs the collision reaches. Compartment selectivity is real and irrelevant to this.
+
+### Three angles, one answer
+
+| task | real vs rewired | real vs random |
+|---|---|---|
+| linear capacity | no difference | **random wins** |
+| signed valence | real wins (design fault: signs indexed by MBON column) | no difference |
+| interference | no difference | **random wins** |
+
+Within linear associative storage the connectome's structure earns nothing, asked three different
+ways. That is not "the connectome is useless" — FlyGM wins against this same control on closed-loop
+sensorimotor control. It says this frame is the wrong one. The mushroom body was shaped by natural
+odour statistics, metabolic cost, developmental constraint, and above all by choosing actions; only
+storage was measured here.
+
+`compartment_valence.py` is what survives as a standalone result: valence signs read off raw anatomy,
+nothing fitted, recovering the textbook horizontal-reward / vertical-punishment split.
