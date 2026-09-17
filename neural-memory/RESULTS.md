@@ -4969,3 +4969,51 @@ One repository, one model (Haiku), one budget, fourteen paired tasks. The ceilin
 limitation: with every condition at 100% the only endpoint with variance is a search-length measure on
 a sample far too small for its spread. A tighter budget on the same tasks and the same notes is the
 next measurement, and it changes only how much room the agent is given.
+
+# Phase 79: the familiarity signal loses to the model's own entropy
+
+The one mechanism in this project that ever measured well was familiarity — 0.97 win rate at telling
+a supported cue from an unsupported one, in fixed-size state. It also survives the diagnosis every
+other idea failed: retrieval returns what the context already says, and an injected activation means
+nothing in the model's coordinates, but familiarity returns no content at all. It reports coverage,
+and a model cannot ask itself whether a pattern is new, because its confidence is token likelihood —
+fluency rather than possession.
+
+So the question was whether that signal warns where the model will do badly, before it generates.
+`eval_familiarity_foresight.py` writes 4,000 of Qwen's own hidden states into a 4,096-cell graded
+filter and asks whether a held-out action's overlap predicts the model scoring it poorly. Streams are
+split whole, so nothing written comes from a probed trajectory, and the states are centred first
+because phase 76 measured the cone they otherwise sit in.
+
+| reader | state | AUC vs the harder half |
+|---|---|---:|
+| **entropy of the output distribution** | none | **0.8179** |
+| prompt length | none | 0.5494 |
+| chance | | 0.5000 |
+| **cell overlap** | **O(1)** | **0.4498** |
+| answer length | none | 0.4350 |
+
+**It fails its gate, and not narrowly.** Phase 12 lost to `question_length` by 0.013; this loses to
+entropy by 0.368, and does not separate from chance. Where the model will do badly is something the
+model is already saying, out loud, in its own output distribution. A fixed-size filter over hidden
+states adds nothing to that.
+
+## What the test does not settle
+
+Two things keep this from being the last word on the idea.
+
+The endpoint is next-action likelihood — the quantity phase 74 retired for being unable to tell a
+better agent from a better predictor of one. Scoring a memory signal on a metric this project already
+rejected is incoherent, and the honest version asks whether an unfamiliar *task* is one the agent
+actually fails.
+
+Entropy is also available only once generation starts, and familiarity before it. For gating that
+timing is the whole point, so entropy winning does not make it a substitute. But at 0.4498 the
+question does not arise.
+
+## Interpretation boundary
+
+One filter geometry (4,096 cells, 64 active), one layer, one pooling, one corpus. The write set is
+agent actions rather than anything resembling a knowledge base, so this says nothing about whether
+familiarity over documents gates hallucination — that is the setting where it measured 0.97, and it
+is not this one.
