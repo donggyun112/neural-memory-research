@@ -1178,3 +1178,86 @@ uv run python bloom_capacity_probe.py --trials 20 --keep-ratios 0.02,0.05,0.10,0
   sound-tuned neurons is enough for anything beyond simple tones/noise, or whether AMMC(L)
   needs pulling in too; and real recorded sound (courtship song, environmental audio) instead
   of only synthetic tones/noise.
+
+## Phase 38: the wiring is not for capacity, and the valence task I built could not test it either
+
+FlyGM (arXiv 2602.17997) instantiated the whole fly connectome as a graph controller and beat three
+baselines on locomotion. Its sharpest control is a degree-preserving rewiring: every neuron keeps its
+exact in- and out-degree, only its partners change, so losing to it means the advantage is *who* is
+wired to whom rather than how much wiring there is. The paper never tests memory — searching its text
+for "mushroom body" returns nothing, because walking does not need one, even though those neurons sit
+in the graph it uses. This asks the question it left.
+
+### Linear associative capacity: the connectome carries no prior
+
+`wiring_prior_probe.py` stores associations in the real KC-to-MBON support and compares against a
+curveball rewiring and a uniform shuffle of the same synapses.
+
+| items | real | rewired | random | real over rewired | real over random |
+|---:|---:|---:|---:|---|---|
+| 500 | 0.9776 | 0.9750 | 0.9976 | +0.0026 NOT resolved | **-0.0200 resolved** |
+| 1000 | 0.7874 | 0.7898 | 0.8760 | -0.0023 NOT resolved | **-0.0886 resolved** |
+| 2000 | 0.4050 | 0.4053 | 0.4822 | -0.0003 NOT resolved | **-0.0772 resolved** |
+
+By the falsification fixed in advance, this fails: the real wiring does not beat the degree-preserving
+rewiring, so on this measure its structure is worth no more than its degree sequence. And the degree
+sequence itself costs capacity — a uniform shuffle of the same 30,543 synapses wins everywhere.
+
+That agrees with the literature rather than overturning it. Random expansion is what maximises coding
+capacity, and the mushroom body pays capacity for selectivity, biasing connectivity toward what
+matters to the animal. **Capacity is not what this wiring is for.**
+
+### What it is for, read straight off the anatomy
+
+`compartment_valence.py` counts PAM against PPL1 presynapses per compartment and takes the sign their
+ratio implies. Nothing is fitted and no behavioural data is used.
+
+| reward | | punishment | |
+|---|---:|---|---:|
+| b'2 | +1.000 (PAM 12659 : PPL 1) | a3 | -1.000 (PAM 0 : PPL 2424) |
+| g5 | +0.996 | CA | -1.000 |
+| b2 | +0.996 | a2 | -0.999 |
+| b1 | +0.988 | a'3 | -0.993 |
+| g4 | +0.987 | a'2 | -0.969 |
+| g3 | +0.907 | g1 | -0.856 |
+| b'1 | +0.750 | a'1 | -0.800 |
+| a1 | +0.727 | g2 | -0.448 |
+
+The textbook split — horizontal lobes reward, vertical lobes punish — falls out of raw synapse counts.
+
+### The valence task, and why it does not answer the question
+
+`valence_store_probe.py` stores one bit per pattern under the fly's depression rule and reads the
+valence-weighted MBON ensemble vote.
+
+| items | real | rewired | random | real over rewired |
+|---:|---:|---:|---:|---|
+| 400 | 0.9427 | 0.9397 | 0.9403 | +0.0030 resolved |
+| 2000 | 0.7216 | 0.7192 | 0.7224 | +0.0023 NOT resolved |
+| 8000 | 0.6331 | 0.6318 | 0.6334 | +0.0013 resolved |
+
+The real wiring does beat the rewiring, consistently in sign and resolved at two loads. But the effect
+is one to three tenths of a percent, and no load separates it from a uniform shuffle.
+
+**The design is the reason, and it is mine.** The signs are indexed by MBON column, and rewiring
+shuffles which Kenyon cell reaches which MBON while leaving that column-to-sign map intact. Valence
+therefore survives any rewiring, which is why all three conditions agree to three decimals. The task
+injects the compartment structure into the scoring rather than requiring the wiring to supply it, so
+it cannot test the wiring.
+
+### Two defects, both caught by their own numbers
+
+The first capacity probe scored exactly chance for every wiring: the docstring described a delta rule
+the code did not implement, so codes were pushed through a fixed matrix with nothing stored. Printing
+chance alongside the scores is what made it obvious.
+
+The first rewiring permuted column indices globally and summed collisions, losing 5,255 of 30,543
+synapses and breaking row degree outright. "The real wiring beats a rewiring" then only meant it beat
+a sparser matrix, and the +0.0495 it produced at 1000 items became -0.0023 once the curveball trade
+held both degree sequences and the value multiset exactly.
+
+### What to measure next
+
+Before designing another task, measure whether there is block structure to exploit: do Kenyon cells
+partition by the compartment their MBONs sit in, more than a degree-preserving rewiring would give?
+If they do not, no task will separate these conditions and the valence result above is the ceiling.
