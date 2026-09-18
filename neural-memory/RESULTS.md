@@ -5189,3 +5189,69 @@ actually resist an agent is untested. They may also select for one kind of defec
 shared parser that a dependent module exercises — rather than for difficulty in general, which would
 be its own confound if a memory condition happens to suit that kind. The peer is generating a
 cross-module pool now and reporting what it looks like before trusting a number from it.
+
+# Phase 83: phase 77's diagnosis was wrong — the channel is closed, not the encoder
+
+Phase 77 injected a memory into the residual stream and own-trajectory versus foreign-trajectory came
+back indistinguishable. The diagnosis offered then was specific: the vector came from an outside
+encoder and landed in a coordinate system the model built for itself, so it was structured noise.
+That diagnosis was never tested, and it was the reasoning behind every "model-layer memory" proposal
+since.
+
+`eval_gradient_memory.py` tests it by changing one thing. The stored direction is the gradient of the
+loss on the action the agent actually took, with respect to the hidden states — in the model's own
+coordinates by construction, one backward pass, no weight moved and no outside basis. Everything else
+is phase 77's comparison: write at one position, read four steps later in the same trajectory and at a
+position in another, score the known-good next action.
+
+Falsification and sample size were fixed in the file before running: 0.02 NLL as the smallest effect
+worth a backward pass, 200 positions as the floor because phase 77 resolved to ±0.011 at 280.
+
+## 250 positions, and the diagnosis fails
+
+| source | scale | action NLL | gain |
+|---|---:|---:|---:|
+| no memory | — | 1.4734 | — |
+| own | 0.05 | 1.3737 | +0.0997 |
+| foreign | 0.05 | 1.3869 | +0.0865 |
+| own | 0.15 | 1.9869 | −0.5135 |
+| foreign | 0.15 | 2.0063 | −0.5329 |
+| own | 0.30 | 4.3444 | −2.8711 |
+| foreign | 0.30 | 4.4324 | −2.9590 |
+
+| comparison | difference | 95% interval | |
+|---|---:|---|---|
+| own over foreign @ 0.05 | +0.0132 | [−0.0247, +0.0508] | NOT resolved |
+| own over foreign @ 0.15 | +0.0194 | [−0.3446, +0.3964] | NOT resolved |
+| own over foreign @ 0.30 | +0.0880 | [−0.7508, +0.9342] | NOT resolved |
+
+**A gradient direction is no more trajectory-specific than an encoded one.** The channel is closed,
+and phase 77's failure was never about the encoder.
+
+## The part that is not nothing
+
+At the smallest scale both sources *help*, by about 0.09 NLL against no memory at all. A foreign
+trajectory's gradient helps nearly as much as the trajectory's own. So the direction carries something
+generically useful — plausibly a format prior, "a tool call comes next" — and nothing specific to the
+episode it was taken from. That is a prior, not a memory, and it is what every model-layer proposal in
+this project would actually have been delivering.
+
+Past the smallest scale both collapse: NLL 4.3 at scale 0.30 against a 1.47 baseline. A direction that
+helps a little when whispered destroys the computation when shouted, which is its own argument against
+treating this channel as a place to put anything substantial.
+
+## What this closes
+
+Five mechanisms now: similarity over stored actions, familiarity over hidden states, mushroom-body
+valence, an encoded vector in the residual stream, and a gradient in the residual stream. The first
+three failed because resemblance is already computed. These last two failed for a different reason —
+the channel carries priors, not episodes — and that is worth separating rather than folding into one
+verdict.
+
+## Interpretation boundary
+
+One layer, one gap (4 steps), one pooling of the gradient over sequence positions, one model. The
+control the peer proposed and I did not run — "own-far", a gradient from a much earlier position in
+the same trajectory — was only worth the extra pass if the result resolved positive, and it did not.
+If anyone revisits this, note that an unresolved own-over-foreign makes that control moot rather than
+outstanding.
