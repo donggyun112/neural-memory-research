@@ -60,6 +60,20 @@ marked as mattering — in particular failures, which the current pipeline disca
 — has never been tried here. — *claimed by neural-memory-research-6d, 2026-09-19,
 design in board/003-write-time-selection.md*
 
+*Update, 2026-09-19: closed as untestable on this task family, not merely
+untested.* Three separate repair-task pools (local, and two reads of one
+cross-module attempt) produced zero failures with a genuine dead end in them.
+The obvious next move — deliberately sample the one confirmed-hard module,
+`ranges.py` (21% resolved) — was already answered by data already on disk:
+its eleven failures (phase 86) are zero-edit too. The module that produces
+failures produces agents that never arrive at the source, not agents that
+arrive and are wrong. No pool built from mutation-injection-verified-by-
+pytest, in this repo, yields dead-end material, regardless of which module
+gets sampled. Full account in board/003. Testing the hypothesis needs a
+different task family — one where locating the defect is genuinely the work
+and failures come from wrong hypotheses rather than exhausted clocks — which
+is a design decision for a future attempt, not a follow-up inside this one.
+
 **Does keymem's own benchmark need a random control?** Its BENCHMARKS.md reports
 graph traversal at 63% against flat semantic at 53%, with no random-selection
 baseline. Given the standing claim above, flat semantic may not beat random,

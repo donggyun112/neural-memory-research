@@ -90,6 +90,158 @@ documented negative: not "memory didn't help," but "this task shape cannot
 test whether memory helps regardless of runtime knobs," which is a different
 and more useful thing to have on record than a null result would have been.
 
+## Cross-module pool: one generator defect found and fixed, and n=5 reframed
+
+Generated 16 tasks, dropped one before splitting: `_structures-28-15` mutates
+`def __repr__(self) -> str:` via the `>` -> `>=` rule and lands on the `->`
+return-type arrow, producing `->= str:` -- a SyntaxError (collection error at
+import), not a logic defect, verified directly by reproducing it and running
+the suite. `make_repair_tasks.py`'s own `SKIP` regex guards which *line* a
+mutation lands on, not what the mutation turns it into, so it could not have
+caught this. keymem-20 fixed it at the class level rather than patching the
+instance: every mutated file is now compiled and rejected on `SyntaxError`
+before its tests run, covering rules not yet written too. Verified against the
+actual case, not just `demo()`. Doesn't affect this pool -- the bad task was
+already excluded -- but the next pool generated won't need the same catch.
+
+Split 15 cross-module tasks by module: round one 10 (2 modules), round two 5
+(3 modules). **keymem-20's reframing, agreed:** five binary outcomes across
+three modules cannot measure a resolved-rate difference -- phase 84's
+between-module orientation variance would swamp it, and a 3/5-vs-4/5 result
+would be one task, which is noise. What n=5 *can* support is the qualitative
+question this whole line has been building toward: do the failures (if any)
+look like a wrong path actually chased, or like orientation that ran out of
+clock even under genuine cross-module search. Treating this round as a look,
+not a measurement, and deferring any decision to generate a properly-powered
+pool (~600-800 tasks at this yield, for round two large enough to resolve a
+20-point resolved-rate difference) until after reading what the failures
+actually contain.
+
+## Module identity, not task shape, dominates the resolved rate
+
+keymem-20 broke their 28-task 9-turn `none` run down by which module each
+task mutates: `ranges` resolves 21% (3/14), every other module (`version`,
+`_parser`, `direct_url`, `_musllinux`) resolves 80-100%. Their "60% baseline"
+was the proportion of `ranges` tasks in the sample, not a property of the
+budget or the condition. This is phase 84's orientation-cost-by-location
+finding with a number attached, and it is strong enough to swamp the
+cross-module manipulation entirely.
+
+This project's crossmod round one is 8 of 10 `_parser.py` -- the module that
+went 5-for-5 in keymem-20's data. A high resolved rate here would not mean
+the cross-module filter failed to add difficulty; it would mean this draw
+landed in a module that resolves near-ceiling regardless of task shape,
+which is a different finding the resolved count alone cannot distinguish
+from the first. The qualitative check (did any failure reach an edit) is
+unaffected, since it is a property of whichever failures occur, not of the
+module mix producing them.
+
+**If a properly-powered pool is ever generated, stratify by module rather
+than drawing raw counts** -- an 80-task pool drawn unevenly would reproduce
+this confound at larger n instead of resolving it.
+
+Follow-up on why `ranges` is hard: keymem-20 checked size, sibling-file
+confusion, name-stem repetition, and comparison-operator density. None of it
+discriminates -- `ranges` is *less* name-repetitive than three modules that
+resolve fine, and matches `version` exactly on operator density. Honest
+state: module predicts outcome strongly and nothing measured explains why.
+Not chasing it further unless a harder pool is actually needed later.
+
+**Round one drew the wrong module set, structurally, not by bad luck.**
+Round one is 8 `_parser.py` + 2 `version.py` -- both in keymem-20's
+near-ceiling cluster. Round two is 2 `specifiers.py` + 2 `_ranges.py` + 1
+`_tokenizer.py` -- `_ranges` being the one module their data shows actually
+resists the agent. The whole-module split (no module in both rounds) handed
+every hard-by-precedent module to round two and every easy one to round one.
+Round one cannot produce a genuine dead-end failure regardless of how the run
+finishes, because the modules capable of producing one aren't in it. Declined
+an offer to substitute a different pool's zero-edit (by construction,
+dead-end-free) failures into round one's note-building for this reason: it
+would re-test the already-established "orientation failures don't yield
+avoid-lines" finding rather than fix the actual problem, which is round one's
+module draw, not its failure count. Running round two regardless -- it
+contains `ranges` itself, so whether *those* five produce a real dead-end
+failure is the informative version of the question, on tasks actually in
+this run.
+
+**Stated before the number exists, per keymem-20:** the module split also
+strips the one thing ever measured to help in this project. Phase 84 traced
+the standing 0.64-action gain from random notes at 9 turns to orientation
+content (`find src -type f`, `pytest ... | tail -20`) -- half general
+procedure, half module-specific location. Round one is 100% `_parser`/
+`version`, round two 100% `ranges`/`specifiers`/`_tokenizer`: none of round
+one's location knowledge applies. **If `taught` scores at or below `none`,
+that is "the orientation half of the one working mechanism couldn't transfer
+by construction," not "avoid-lines don't help" -- the two would look
+identical in the number and only this note distinguishes them.**
+
+**Pre-registered prediction for round two's `none`:** keymem-20's per-module
+rates put `_ranges` at 21% resolved. Round two is 2 `_ranges` + 2
+`specifiers` + 1 `_tokenizer`, so `none` is predicted at roughly 1-2 of 5.
+Landing at 4-5/5 would mean either `specifiers`/`_tokenizer` are easy modules
+neither of us has sampled, or the 12-turn budget does more work than the
+9-turn data suggests -- both worth knowing, neither visible from the count
+alone without this written down first. `specifiers` is the one module with
+zero prior data from either session, and structurally the extreme case
+(84% name-stem overlap, highest operator density of the five measured) for
+the "similarly-shaped functions" hypothesis already rejected for `ranges` --
+worth reading its two tasks closely regardless of the count.
+
+## Close: the crossmod line produced zero avoid-content, and the reason is module identity
+
+Round one: 10/10 resolved, 0 failed -- `taught` degenerated to a 12-line
+do-only block exactly as the module composition predicted. Round two
+`none`: 5/5 resolved -- also zero failures, so there was nothing for
+`taught` to be tested against beyond the check that already failed to
+materialize.
+
+The 1-2/5 prediction for round two was wrong, but not because the pool
+behaved unexpectedly: `ranges.py` and `_ranges.py` are two different real
+files in this repo (`wc -l`: 2066 and 845 lines respectively), and
+keymem-20's relayed resolved-rate figure for the hard one (`ranges`, 21%,
+budget9 data) got attached to the task-name prefix that actually belongs to
+the easy one (`_ranges`, 11/12 resolved, from the 25-turn round-one data).
+Round two's two `_ranges.py` tasks resolving is the expected outcome once
+the two files are told apart, not evidence about the budget or about
+`specifiers`/`_tokenizer` being unusually easy. Checked and confirmed:
+phase 87's structural table (name-repetition, operator density) was
+computed on the real `ranges.py` throughout, so that rejection stands --
+only the resolved-rate label was swapped when relayed, not the analysis.
+`specifiers` resolving 2/2 is still new, real data, and still argues against
+the "similarly-shaped functions" reading a second way (84% name-stem overlap,
+resolved cleanly).
+
+**Three pools, three distinct reasons, zero avoid-content across all of
+them:** the local pool (test-name giveaway, even under `--blind`), the first
+crossmod attempt at 25 then 12/9 turns (module composition happened to draw
+only near-ceiling modules), and this corrected read of the same attempt
+(same reason, now with the actual module identities right). The pattern that
+generalizes is not about memory -- it is that task difficulty in this
+harness is almost entirely a module-identity property, overwhelmingly so,
+and the one confirmed-hard module (`ranges.py` itself, 21% resolved, never
+sampled by either the local pool or this crossmod draw) is the only thing
+that has ever produced real failures in this project's data.
+
+**Closing this line rather than proposing a 600-800-task regeneration --
+and closing it harder than "wrong pool," per keymem-20.** Sampling
+`ranges.py` deliberately would not have helped either: the eleven `ranges`
+failures already on disk (phase 86, from the local-pool 9-turn `none` run,
+now confirmed attributed to the real 2,066-line file) are zero-edit. The one
+module in this repository that produces failures produces agents that never
+arrive at the source, not agents that arrive and are wrong. There is no pool
+in this task family -- mutation injection verified by a pytest suite, fixed
+by an agent reading failing-test output -- that yields dead-end material,
+including the one built from the only module that fails.
+
+That makes this finishable rather than merely paused: **write-time selection
+is untestable on this task family, not untested for want of effort.** Three
+pools, three distinct reasons, plus the knowledge that a fourth attempt
+inside the same family would fail for a fourth reason. Testing the
+hypothesis needs a setting where locating the defect is genuinely the work
+*and* failures come from wrong hypotheses rather than exhausted clocks --
+a requirement statable in advance, and mutation-injection-on-a-well-tested-
+library does not meet it regardless of which module gets sampled.
+
 ## Status
 
 Blocked on one thing before touching code: `run_repair_trials.py`,
