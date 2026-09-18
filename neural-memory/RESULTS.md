@@ -5370,3 +5370,64 @@ one thing throughout and squeezed it, rather than swapping instruments as it des
 Round one needing 14 actions on the same 25-turn budget is the other half of that: its modules are
 different and larger, so orientation is set by which part of the repository a task sits in, not by
 how many turns the agent is given.
+
+# Phase 85: at the corpus ceiling, the answer is that this corpus cannot answer
+
+Phase 83's centred rerun left own-over-foreign at +0.0424 [−0.0017, +0.0858] — unresolved, but tripled
+by removing the shared component and with its lower bound two thousandths from zero. A peer computed
+what resolving it against the pre-registered 0.02 bar would take: roughly n ≈ 964, from this run's own
+variance rather than an earlier phase's.
+
+Checking that number exposed something else. `min_calls=64`, the filter deciding which trajectories
+enter any experiment here, came from the first stream-preparation script written for this project and
+had never been re-examined. It was discarding a third of the corpus:
+
+| min_calls | usable trajectories | best-case half-width |
+|---:|---:|---:|
+| 64 | 635 | 0.0275 |
+| 32 | 970 | 0.0223 |
+| 20 | 997 | 0.0220 |
+| 12 | 1000 | 0.0219 |
+
+Even lifted, the corpus tops out near 1000 and clears the required 0.0224 by 0.0005 — inside the
+sampling error of the 0.354 spread that both numbers rest on. That was written onto the board as a
+three-way pre-registration before the run, precisely because a margin that thin invites rounding.
+
+## The result, at 997 independent trajectories
+
+```
+mean pairwise cosine across 997 gradients   0.1515  →  -0.0009 centred
+no memory                                   1.4273
+own      @ 0.05                             1.4733   (-0.0460)
+foreign  @ 0.05                             1.4944   (-0.0671)
+
+own over foreign @ 0.05    +0.0210  [-0.0005, +0.0427]   NOT resolved
+```
+
+**Outcome three, as pre-registered.** The interval excludes neither zero nor 0.02. The lower bound
+misses zero by five ten-thousandths.
+
+## What four times the sample did to the estimate
+
+| n | own over foreign |
+|---:|---|
+| 250 | +0.0424 [−0.0017, +0.0858] |
+| 997 | **+0.0210** [−0.0005, +0.0427] |
+
+The point estimate halved. Whatever is there sits at or below the 0.02 bar — which is the line fixed
+in advance as the smallest effect worth a backward pass. Had the +0.0424 been trusted and `own-far`
+run against it, the next experiment would have been hunting a mechanism for an effect of a size that
+does not exist.
+
+## The honest sentence
+
+Not "gradient memory does not work", and not "it works". **997 trajectories cannot resolve an effect
+this small.** Resolving it needs roughly 1,500–2,500 trajectories — 1.5 to 2.5 times what this corpus
+holds — and that is more agent traces, not a longer run of these.
+
+## Interpretation boundary
+
+One layer, one gap, one scale, one model. The closure of phase 77's *diagnosis* does not depend on
+any of this: own and foreign were indistinguishable before centring and remain so after, four times
+over. What is unresolved is only whether a small residual effect survives the shared component's
+removal, and the answer is that this dataset is the wrong size to ask.
