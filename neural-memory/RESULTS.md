@@ -5586,19 +5586,37 @@ could ever produce something an avoid-line might name — reading the right file
 about where in it the defect sits. Even that is thin: the agent never got as far as an edit to be
 wrong about.
 
-## What it offers as a difficulty lever
+## It offers no difficulty lever, and the first draft of this phase claimed one
 
-A better one than cross-module filtering, and cheaper. Cross-module removes the giveaway, but a peer's
-pool suggests it may not make anything harder; module choice demonstrably does, and it is knowable
-before any agent runs. **Selecting tasks from large modules is a difficulty knob that costs no yield.**
+This section first said that selecting tasks from large modules is a difficulty knob costing no yield.
+A peer pointed out that the paragraph above it is a counterexample to its own conclusion: version is
+1,250 lines and resolves 5 of 5. What exists here is one hard module and one large-easy module in the
+same run, which is evidence that size does not discriminate, not evidence for selecting on it. "Module
+size is a lever" was exactly as general as "ranges.py is a lever", stated with a variable name that
+sounded reusable.
 
-The cost is that it selects for one thing — big files — rather than difficulty in general, exactly the
-caveat raised against cross-module selection. Two pools differing in module composition are not
-comparable on resolve rate at all, which is phase 87's finding restated.
+Their alternative — that ranges.py's interval logic has many similarly-shaped functions, making
+orientation-by-skimming less effective regardless of line count — is checkable and also fails:
+
+| module | lines | functions | names sharing a stem | comparisons per line |
+|---|---:|---:|---:|---:|
+| ranges | 2066 | 62 | 42% | 0.27 |
+| version | 1250 | 57 | **63%** | 0.27 |
+| specifiers | 1450 | 62 | **84%** | 0.40 |
+| markers | 577 | 24 | 29% | 0.14 |
+| _parser | 418 | 27 | **78%** | 0.11 |
+
+ranges is *less* repetitive than version, specifiers and _parser by name-stem overlap, and identical
+to version in comparison density. No structural measure taken here singles it out.
+
+So the honest state is: **module predicts outcome strongly (phase 87) and nothing measured explains
+why.** Not size, not sibling files, not name repetition, not operator density. Whatever separates
+ranges from version is not visible in the file's shape.
 
 ## Interpretation boundary
 
-Per-module cells are small: _manylinux is one task, _musllinux two. The claim rests on ranges at
-fourteen against version at five, and on the file-opening counts, which are unambiguous. Whether
-"large module" or "this particular module" is the operative variable needs a pool built to test it —
-specifiers.py and markers.py are comparably large and were never sampled here.
+Per-module cells are small: _manylinux is one task, _musllinux two. The finding that module matters
+rests on ranges at fourteen against version at five, and on file-opening counts, which are unambiguous.
+The finding that nothing explains it rests on five structural measures, any of which could be the
+wrong measure — a sixth might separate them. What it does rule out is building a pool on "large
+modules" and expecting difficulty to follow.
