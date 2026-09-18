@@ -5431,3 +5431,68 @@ One layer, one gap, one scale, one model. The closure of phase 77's *diagnosis* 
 any of this: own and foreign were indistinguishable before centring and remain so after, four times
 over. What is unresolved is only whether a small residual effect survives the shared component's
 removal, and the answer is that this dataset is the wrong size to ask.
+
+# Phase 86: the failures never formed a hypothesis, so there is no dead end to remember
+
+The live hypothesis in this repo is write-time selection: store what an outcome marked as mattering,
+particularly the failures the pipeline currently discards, and mine them for "avoid" lines — paths
+already found to be dead ends. That is the one structural idea here carrying information genuinely
+absent at decision time.
+
+It assumes the failures contain dead ends. Phase 84 counted that eleven of twenty-eight runs at a
+9-turn budget never edited a line, and then moved on. The logs were on disk the whole time.
+
+## What the eleven failures did
+
+Every action classified as locate (`find`, `ls`, `grep -r`), test, read, edit, or other:
+
+| | locate | test | read | edit |
+|---|---:|---:|---:|---:|
+| failed (11 runs, 99 actions) | 29% | 23% | 33% | **0%** |
+| resolved (17 runs, 140 actions) | 21% | 36% | 25% | 12% |
+
+Every sequence, one letter per action:
+
+```
+_manylinux-62   l r o r r r r l r
+ranges-1678     l l t r o r r t t
+ranges-1802     l t r o r l o r o
+ranges-204      l r o r t t l l l
+ranges-247      l l l t r o r o r
+ranges-376      l t t l r o r o r
+ranges-541      l l t t t t t t t
+ranges-561      l r t l r r o r o
+ranges-614      l l t t l r t o r
+ranges-637      l r t r l l l l l
+ranges-818      l r o r r r r t t
+```
+
+All eleven open with a locate. **Not one ever edited.**
+
+## Which is not what a dead end looks like
+
+A dead end is a hypothesis formed, acted on, and found wrong. Nothing here was acted on — no edit was
+attempted, so nothing was tried and rejected. `ranges-637` and `ranges-204` are the sharpest: both
+return to locating in their second half, having read something and gone looking again. That is not
+"this path was wrong", it is re-scanning a file listing. `ranges-541` spends seven of nine actions
+running tests.
+
+**An avoid-line has nothing to name here.** "This was already tried and failed" requires a try.
+
+## What it does to the live hypothesis
+
+Write-time selection is not refuted — it is untested on a pool where it could apply. On tasks whose
+defect location is given away by the failing test name (87% of them, phase 82), locating is not
+hypothesis formation, so failure cannot take the shape an avoid-line describes. A genuine cross-module
+pool might change that, because there locating *is* hypothesising, and "read the wrong module and
+concluded wrongly" is a dead end that can be written down.
+
+A peer session is running exactly that pool. If its failures look like these, two pools agree and the
+question is settled without generating the 600–800 tasks a powered comparison would need.
+
+## Interpretation boundary
+
+One pool, one budget, one condition, eleven failures. The classifier is crude — a `Bash` line counts
+as locate if it contains `find`, `ls`, `grep -r`, `tree` or `wc`, which will miscount some argument to
+a test command. And no edit at all is a strong enough signal that the percentages are almost
+decoration: the sequences carry the finding.
