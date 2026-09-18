@@ -183,6 +183,12 @@ def main() -> None:
         source = args.memory / f"{task['name']}.txt" if args.memory.is_dir() else args.memory
         return f"\nNotes from earlier repairs:\n{source.read_text()}" if source.exists() else ""
 
+    # Appended as each trial lands rather than written once at the end. A kill at
+    # trial 19 of 20 used to lose all nineteen: the outcomes lived in a list and
+    # the file appeared only after the loop. Hours of agent calls on one
+    # interruption, with no partial file and no error to notice.
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text("")
     trials: list[Trial] = []
     for position, task in enumerate(tasks, start=1):
         workspace = prepare(args.repo, args.workspace / task["name"], task)
@@ -266,6 +272,8 @@ def main() -> None:
             )
         )
         (workspace / "agent-actions.log").write_text("".join(f"{c}\n" for c in calls))
+        with args.output.open("a") as record:
+            record.write(json.dumps(asdict(trials[-1])) + "\n")
         mark = "fixed" if trials[-1].resolved else f"{after} still failing"
         print(
             f"[{position:>3}/{len(tasks)}] {task['name']:<24} {mark:<18}"
@@ -273,8 +281,6 @@ def main() -> None:
             flush=True,
         )
 
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text("".join(json.dumps(asdict(t)) + "\n" for t in trials))
     solved = sum(t.resolved for t in trials)
     cheated = sum(t.touched_tests for t in trials)
     print(f"\n{args.condition}: {solved}/{len(trials)} resolved, {cheated} edited tests")
