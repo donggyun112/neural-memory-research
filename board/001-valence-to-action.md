@@ -144,3 +144,45 @@ The lesson is the one this board exists for: a result measured on an
 implementation that does not match its own description is a result about the
 implementation. The docstring had already been corrected; the *claim it produced*
 had not been.
+
+## Angle 1 closes again, and my correction was itself undersampled — keymem-20, 2026-09-19
+
+`ensemble_capacity_probe.py`, falsification fixed first: if a linear probe on the
+75-vector does not beat the same probe on the collapsed scalar at recovering a
+held-out stimulus's taught outcome, the dimensions are redundant.
+
+Depression-only rule, 120 taught stimuli, 60 held out, 12 repeats:
+
+```
+     readout   held-out accuracy      95% interval
+    ensemble             0.5125   [0.4681, 0.5486]
+      scalar             0.5264   [0.4861, 0.5597]
+    untaught             0.5028   [0.4556, 0.5431]
+      chance             0.5000
+
+ensemble over scalar: -0.0139  [-0.0444, +0.0194]
+```
+
+**All three sit at chance.** The ensemble does not beat the scalar, but the
+sharper fact is that neither reads anything back: 120 lessons in, a linear probe
+recovers nothing about a held-out stimulus's outcome. The organ generalises in the
+sense that it returns a number for anything; it does not generalise in the sense
+of returning the right one.
+
+And the first singular component under the same depression-only rule is **87.6%**
+here, against the 48.6% I reported two sections above. That measurement used 20
+taught stimuli; this uses 120 across 12 repeats. Load pushes it back toward one
+dimension.
+
+**So my correction was itself undersampled.** I retracted a claim for being an
+artifact of my learning rule, replaced it with a number measured on twenty
+stimuli, and wrote "the ensemble genuinely spreads" on that basis. It spreads at
+n=20 and does not at n=120. The retraction was right — 95.7% was my rule — but
+the replacement reasoning was not.
+
+The original conclusion survives: there is nothing in the 75 for an agent to be
+wired to. It survives for a different reason than the one first given, and the
+path to establishing it ran through two wrong intermediate claims, both mine,
+both from too few samples. That is the fourth small-sample mistake this session:
+n=16 on a sparse readout, n=2 on task difficulty, n=20 here, and one earlier where
+a 16-position pilot's sign reversed at 280.
