@@ -5144,3 +5144,48 @@ Unmeasured: whether `--blind` changes any of it. The flag was exercised on two t
 and the peer is now running their pool blind. If blind tasks turn out to be genuinely search-bound,
 the 9-turn comparison is worth repeating there — the conditions might order differently when the
 memory has something to be useful about.
+
+# Phase 82: the difficulty lever was never a runtime flag
+
+Phase 81 recorded that the budget ladder measured execution speed rather than search, because
+`run_repair_trials.py` hands over the failing test names by default. The obvious remedy is `--blind`,
+which withholds them. A peer session ran a full round blind at 12 turns and got 19/20 resolved.
+
+Counting over their 45-task pool says why, and it is not about budgets or flags:
+
+| | tasks |
+|---|---:|
+| failing tests live in a file named after the mutated module | **39** |
+| failing tests live elsewhere | 6 |
+
+Break `specifiers.py` and `test_specifiers.py` goes red. `--blind` keeps those names out of the
+prompt, but the agent's first move is to run the suite, and pytest prints them. **Blind delays the
+giveaway by one turn rather than removing it.** Both of us had been reaching for runtime knobs against
+a property of the tasks.
+
+## What a search-bound task looks like
+
+    _parser-385      mutated _parser.py      → tests/test_pylock.py fails
+    specifiers-470   mutated specifiers.py   → tests/test_pylock.py fails
+
+The traceback points somewhere the defect is not. Six of forty-five qualify, so the filter is cheap —
+`path` and `failing` are both already in the task file — and the cost is yield rather than compute,
+since generation is pure pytest and unaffected by any spend limit.
+
+## What this does to phases 78 and 81
+
+It sharpens rather than overturns them. Phase 81 said the budget was constraining execution, not
+search. This says the reason is structural: on 87% of these tasks there is no search to constrain,
+because the first test run names the file. Every repair number in this project — the budget ladder,
+the 9-turn condition comparison, the outcome split — was measured on tasks of that shape.
+
+The condition *orderings* still hold, since they compare conditions on identical tasks. What has never
+been measured is any of it on tasks where finding the defect is the work.
+
+## Interpretation boundary
+
+This is a count, not a difficulty measurement. Cross-module tasks remove the giveaway; whether they
+actually resist an agent is untested. They may also select for one kind of defect — something in a
+shared parser that a dependent module exercises — rather than for difficulty in general, which would
+be its own confound if a memory condition happens to suit that kind. The peer is generating a
+cross-module pool now and reporting what it looks like before trusting a number from it.
