@@ -5017,3 +5017,86 @@ One filter geometry (4,096 cells, 64 active), one layer, one pooling, one corpus
 agent actions rather than anything resembling a knowledge base, so this says nothing about whether
 familiarity over documents gates hallucination — that is the setting where it measured 0.97, and it
 is not this one.
+
+# Phase 80: three mechanisms, one answer — resemblance is what the model already computes
+
+Phase 79 left the familiarity idea half-closed. It lost to the model's own output entropy, but on an
+endpoint that phase's own writeup called unfit: next-action likelihood, which phase 74 retired for
+being unable to separate a better agent from a better predictor of one. The honest form of the
+question had never been run.
+
+Meanwhile the fly line produced an organ rather than an experiment. `fly-connectome/mushroom_body.py`
+assembles the circuit from the measured connectome — 2,053 Kenyon cells, 75 MBONs, real synapse
+counts, compartment signs from the PAM:PPL1 ratio — and runs it: sparse code in, valence out, and no
+function anywhere that returns a stored item. It generalises to unseen stimuli for free, which a
+lookup cannot.
+
+A peer session (`neural-memory-research-6d`) identified the fork before anything was built on top of
+it. Valence is structurally another *does this resemble something handled before* signal, the same
+family that had just lost. So the question was whether valence and entropy are the same number in
+different clothes, and the falsification was fixed in the file before running: |r| above 0.5, or
+valence failing to clear entropy's AUC, closes the direction.
+
+## Both conditions fired
+
+The organ was taught on 2,000 actions using each trajectory's own `resolved` flag as the dopamine
+signal, and an untaught copy was scored alongside — if teaching changes nothing, the random
+projection was doing the work.
+
+| reader | state | AUC vs the harder half | r with NLL |
+|---|---|---:|---:|
+| entropy of the output distribution | none | **0.7968** | 0.7841 |
+| valence, taught | O(1) | 0.5517 | −0.2169 |
+| valence, untaught | O(1) | 0.5111 | 0.0335 |
+
+`r` between valence and entropy is **−0.5310**, past the threshold on its own.
+
+## The second table is what the result actually rests on
+
+The peer patched the script before it ran, adding an AUC against whether the trajectory *actually
+failed* — the endpoint phase 79 said was the honest one and then did not use, even though `resolved`
+was already loaded for teaching and sitting unused at eval.
+
+| reader | AUC vs `resolved == 0` |
+|---|---:|
+| entropy | 0.4456 |
+| valence | 0.4204 |
+| valence, untaught | 0.5417 |
+
+**Everything is at chance, entropy included.** Its 0.7968 on the NLL split was predicting how hard
+the next token is, not whether the agent fails. Without this table the phase would read "entropy
+wins" — true, and beside the point, because what entropy wins at is not what anyone wants predicted.
+
+**Teaching made it worse.** Untaught 0.5417 against real outcomes, taught 0.4204. Experience did not
+improve the signal.
+
+## What this closes
+
+| mechanism | measured against | result |
+|---|---|---|
+| similarity over stored actions | random selection | worse, five measurements, two endpoints |
+| familiarity over hidden states | output entropy | 0.4498 to 0.8179 |
+| valence through real fly wiring | output entropy | 0.5517 to 0.7968, r = −0.5310 |
+
+Each asks whether the present resembles something handled before. Each either loses to a number the
+model emits for free, or fails to beat chance against real outcomes. **The family is empty, not the
+instances** — and a resemblance signal cannot be the basis of a memory for an agent, because
+resemblance is already computed and already available.
+
+## A defect the verdict does not rest on
+
+`teach()` reported *negative* depletion: total synaptic weight grew 3%. Where a punishment signal
+meets a punishment-taught compartment, `outcome * sign` is negative and the update adds weight. The
+peer traced this correctly — it is not a separate bug but the mechanism that produced the
+antisymmetric readout, and the docstring calling it depression-only was wrong twice: it misdescribes
+the code, and it made its own consequence look like a defect. The fly's plasticity is predominantly
+depressive; this rule is not, and the gap is recorded rather than quietly patched.
+
+## Interpretation boundary
+
+One corpus, one generator, 200 probes, one filter geometry. The trajectory's single outcome is
+applied uniformly to every action in it, so a solved trajectory's locally bad steps are rewarded
+alongside its good ones — that is the fly's own broadcast-dopamine structure rather than an
+introduced error, but it means this says nothing about per-action credit. And "resemblance is empty"
+is a claim about resemblance, not about memory: what has never been tried here is selection at write
+time, storing only what an outcome marked as mattering.
