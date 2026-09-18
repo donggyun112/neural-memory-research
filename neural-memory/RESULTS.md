@@ -5228,13 +5228,30 @@ worth a backward pass, 200 positions as the floor because phase 77 resolved to �
 **A gradient direction is no more trajectory-specific than an encoded one.** The channel is closed,
 and phase 77's failure was never about the encoder.
 
-## The part that is not nothing
+## The part that looked like something, and was the mean
 
-At the smallest scale both sources *help*, by about 0.09 NLL against no memory at all. A foreign
-trajectory's gradient helps nearly as much as the trajectory's own. So the direction carries something
-generically useful — plausibly a format prior, "a tool call comes next" — and nothing specific to the
-episode it was taken from. That is a prior, not a memory, and it is what every model-layer proposal in
-this project would actually have been delivering.
+At the smallest scale both sources helped by about 0.09 NLL, own 0.0997 and foreign 0.0865. The
+reading offered here first was that the direction carries a generic prior — something like "a tool
+call comes next" — and nothing episodic.
+
+That was a story where an arithmetic check was available. A peer pointed out that this codebase
+already centres hidden states before using them, because phase 76 measured them at 0.87 average
+cosine, and that `gradient_at()` pools over the same representation on the same data and centres
+nothing. Rerunning with the shared direction removed:
+
+| | before centring | after |
+|---|---:|---:|
+| mean pairwise cosine across the 250 gradients | 0.1651 | −0.0039 |
+| own @ 0.05, gain against no memory | +0.0997 | **−0.0531** |
+| foreign @ 0.05 | +0.0865 | **−0.0954** |
+
+**The gain was the common component and nothing else.** With it removed the same injection *hurts*.
+Note the cosine is 0.1651, not the 0.87 of the hidden states — a modest shared direction was enough
+to account for the entire effect, so "the states are not in a tight cone" would not have excused
+skipping the check.
+
+No prior, no format signal, no story. The mean of 250 gradients, injected at 5% of the residual norm,
+is mildly useful; each gradient's own contribution is not.
 
 Past the smallest scale both collapse: NLL 4.3 at scale 0.30 against a 1.47 baseline. A direction that
 helps a little when whispered destroys the computation when shouted, which is its own argument against
@@ -5248,13 +5265,29 @@ three failed because resemblance is already computed. These last two failed for 
 the channel carries priors, not episodes — and that is worth separating rather than folding into one
 verdict.
 
+## What centring did to own-over-foreign, which is not nothing and is not a result
+
+| scale | before centring | after centring |
+|---|---|---|
+| 0.05 | +0.0132 [−0.0247, +0.0508] | **+0.0424 [−0.0017, +0.0858]** |
+| 0.15 | +0.0194 [−0.3446, +0.3964] | −0.0101 [−0.1494, +0.1222] |
+
+Removing the shared component tripled the point estimate at the small scale and pulled the lower
+bound to within 0.002 of zero. Still unresolved, and the interval cannot say whether the effect clears
+the 0.02 bar fixed before running, so by the standard this project has adopted it is not a finding.
+It is recorded because the direction of the change is informative: the common component was not
+hiding an episodic signal, it was diluting one, and that is a different situation from phase 77's.
+
+Whether anything survives there needs its own run with its own n, and the peer's "own-far" control —
+a gradient from a distant position in the same trajectory — becomes the discriminating test rather
+than a moot one, since "own beats foreign" at 4 steps is equally consistent with nearby steps in one
+session simply resembling each other.
+
 ## Interpretation boundary
 
-One layer, one gap (4 steps), one pooling of the gradient over sequence positions, one model. The
-control the peer proposed and I did not run — "own-far", a gradient from a much earlier position in
-the same trajectory — was only worth the extra pass if the result resolved positive, and it did not.
-If anyone revisits this, note that an unresolved own-over-foreign makes that control moot rather than
-outstanding.
+One layer, one gap (4 steps), one pooling over sequence positions, one model, 250 positions. The
+closure of phase 77's diagnosis does not depend on any of the centring work: own and foreign were
+indistinguishable before centring and remain so after.
 
 # Phase 84: the turns go on orientation, not on finding the bug
 
