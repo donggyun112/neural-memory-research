@@ -100,10 +100,22 @@ time. The fly does the reverse — dopamine decides what is written at all, and
 there is no search later. Storing only what an outcome marked as mattering,
 particularly the failures the pipeline discards, has never been run.
 
-It may be untestable on this task family. An avoid-line names a path already found
-wrong, and the failures here contain none: all eleven classified reached zero
-edits, so nothing was tried and rejected. *(phase 86)* A pool where locating the
-defect is genuinely the work might differ; one is being generated.
+It is untestable on this task family, and that is now measured rather than
+suspected. An avoid-line names a path already found wrong, and no pool here
+contains one. Three pools were tried — local at 25 turns, local at 12 blind,
+cross-module at 12/9 — and each produced zero dead-end material for a different
+reason: the budget never bound, then the failing test named the module, then the
+draw landed entirely in near-ceiling modules. *(phase 89)*
+
+Sampling the one confirmed-hard module would not help either: its eleven failures
+reached zero edits, so it produces agents that never arrive at the source rather
+than agents that arrive and are wrong. Testing write-time selection needs a
+setting where locating the defect is genuinely the work.
+
+The transferable finding from that attempt is not about memory: **task difficulty
+in this harness is almost entirely a module-identity property** — not budget, not
+whether the test names the module, not file size or structure, and phase 88
+established that no measured property of a module predicts it.
 
 ## What the tooling is worth independently
 

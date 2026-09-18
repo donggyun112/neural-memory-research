@@ -5620,3 +5620,68 @@ rests on ranges at fourteen against version at five, and on file-opening counts,
 The finding that nothing explains it rests on five structural measures, any of which could be the
 wrong measure — a sixth might separate them. What it does rule out is building a pool on "large
 modules" and expecting difficulty to follow.
+
+# Phase 89: three pools, three reasons, no dead-end material anywhere
+
+Write-time selection — store what an outcome marked as mattering, mine the failures for avoid-lines
+naming paths already found wrong — is the one structural idea in this repository carrying information
+genuinely absent at decision time. Testing it needs failures containing dead ends. A peer session
+built a cross-module pool specifically to produce them.
+
+Round one: 10 of 10 resolved, zero failures, so the taught condition degenerated to 12 do-lines and
+zero avoid-lines. Round two: 5 of 5 resolved. **Zero failures across both rounds.**
+
+## Why each pool failed to produce them, differently each time
+
+| pool | budget | outcome | reason |
+|---|---|---|---|
+| local | 25 turns | 20/20 | budget never bound |
+| local | 12 turns, blind | 19/20 | the failing test names the module; blind delays that by one pytest run |
+| cross-module | 12 / 9 turns | 10/10, 5/5 | module composition — the draw landed entirely in modules that resolve near-ceiling |
+
+Three attempts, three distinct causes, the same result.
+
+## A prediction of mine failed, and the reason was mine
+
+I predicted round two's baseline at 1-2 of 5 from a 21% resolve rate. It came back 5 of 5. The 21% is
+`ranges.py`; round two contains `_ranges.py`. **They are different files** — 2,066 lines against 845 —
+and my run had no `_ranges` tasks at 9 turns at all. Where I do have `_ranges` data it resolves 11 of
+12, so the outcome was expected once the modules are told apart.
+
+Phase 87's structural table is not affected: it was computed on `ranges.py` at 2,066 lines, the real
+hard module. Only the resolve-rate label was misattributed when relaying it. The peer checked that
+before reading anything further into the result, which is the check I should have run before sending
+the prediction.
+
+`specifiers` resolving 2 of 2 is the one genuinely new observation — neither of us had a prior on it,
+and it is the extreme case for the "similarly-shaped functions" hypothesis at 84% name-stem overlap
+and 0.40 comparisons per line. It resolved cleanly, which rejects that hypothesis a second way.
+
+## The finding is not about memory
+
+**Task difficulty in this harness is almost entirely a module-identity property.** Not budget, not
+whether the failing test names the module, not file size or structure. `ranges.py` is the one
+confirmed-hard module across every pool, and nothing short of deliberately sampling it produces
+failures at all.
+
+Which closes the line rather than suggesting a bigger pool. Six hundred undirected tasks would
+reproduce this at larger n; a pool targeting `ranges.py` is "sample the one known-hard module", which
+is not a difficulty criterion.
+
+## And even that pool would not help
+
+The eleven `ranges` failures already on disk reached **zero edits** (phase 86). The one module that
+produces failures produces orientation failures — the agent never arrives at the source, so nothing is
+tried and nothing is found wrong. So there is no pool in this repository that yields dead-end material,
+including one built from the only module that fails.
+
+**Write-time selection is untested and untestable here.** Not refuted: the task family cannot pose the
+question. Testing it needs a setting where locating the defect is genuinely the work and failures come
+from wrong hypotheses rather than exhausted clocks.
+
+## Interpretation boundary
+
+Fifteen crossmod tasks and twenty-eight local ones. "Module-identity property" rests on `ranges` at
+3/14 against every other module near-ceiling, which is one hard module — the claim is that difficulty
+tracks module, not that any particular module property predicts it, and phase 88 established that no
+measured property does.
