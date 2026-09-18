@@ -34,8 +34,8 @@ MUTATIONS: list[tuple[str, str]] = [
     (r"!=", "=="),
     (r"(?<![<>=!])<=", "<"),
     (r"(?<![<>=!])>=", ">"),
-    (r"(?<![<>=!])<(?![=<])", "<="),
-    (r"(?<![<>=!])>(?![=>])", ">="),
+    (r"(?<![-<>=!])<(?![=<])", "<="),
+    (r"(?<![-<>=!])>(?![=>])", ">="),
     (r"\band\b", "or"),
     (r"\bor\b", "and"),
     (r"\bTrue\b", "False"),
@@ -75,6 +75,23 @@ def candidate_lines(source: Path) -> list[tuple[int, str, str, str]]:
             if count and mutated != text:
                 found.append((number, text, mutated, f"{pattern} -> {replacement}"))
     return found
+
+
+def parses(source: Path) -> bool:
+    """Whether the mutated file is still valid Python.
+
+    A rule that breaks syntax produces a collection error, not a logic defect,
+    and an agent asked to repair it is doing a different task. `SKIP` keeps
+    mutations off imports and comments for the same reason, but it guards the
+    line a mutation lands on rather than what the mutation makes of it: `>` to
+    `>=` on a return annotation yields `->= str:`, which SKIP cannot see coming.
+    Checking the result covers every rule, including ones not written yet.
+    """
+    try:
+        compile(source.read_text(), str(source), "exec")
+    except SyntaxError:
+        return False
+    return True
 
 
 def apply(source: Path, line: int, text: str) -> None:
@@ -126,6 +143,15 @@ def main() -> None:
     )
     parser.add_argument("--timeout", type=int, default=180)
     parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument(
+        "--cross-module-only",
+        action="store_true",
+        help=(
+            "keep only mutations whose failing tests do not live in a file named "
+            "after the mutated module -- otherwise the agent's own first pytest "
+            "run hands back the location blind/budget never withheld"
+        ),
+    )
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
 
@@ -153,10 +179,14 @@ def main() -> None:
             break
         apply(path, line, after)
         try:
+            if not parses(path):
+                continue
             failing, complete = run_tests(repo, args.tests, args.timeout)
         finally:
             apply(path, line, before)
         if not complete or not args.min_broken <= len(failing) <= args.max_broken:
+            continue
+        if args.cross_module_only and any(path.stem in node for node in failing):
             continue
         tasks.append(
             Task(
@@ -205,6 +235,11 @@ def demo() -> None:
     # logic defect, not a syntactically obvious edit.
     for skipped in ("import os", "# a == b", "    ", "from x import y"):
         assert SKIP.match(skipped), skipped
+    # A return annotation is not a comparison. `>` -> `>=` on `-> str:` produced
+    # `->= str:`, a collection error rather than a bug to find.
+    for pattern, replacement in MUTATIONS:
+        mutated, count = re.subn(pattern, replacement, "def f(self) -> str:", count=1)
+        assert not count or "->=" not in mutated, (pattern, mutated)
     assert not SKIP.match("    if a == b:")
     print("demo ok")
 
