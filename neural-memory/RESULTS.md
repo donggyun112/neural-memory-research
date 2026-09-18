@@ -5496,3 +5496,49 @@ One pool, one budget, one condition, eleven failures. The classifier is crude �
 as locate if it contains `find`, `ls`, `grep -r`, `tree` or `wc`, which will miscount some argument to
 a test command. And no edit at all is a strong enough signal that the percentages are almost
 decoration: the sequences carry the finding.
+
+# Phase 87: the baseline was a module mix, not a difficulty level
+
+Every repair number in this project is reported per condition and per budget. None is reported per
+module. Phase 84 found that orientation cost — which is most of what the budget buys — is set by
+which part of the repository a task sits in. That should have prompted a look at composition
+immediately, and did not.
+
+The 28-task `none` run at 9 turns, broken down by the module each task mutates:
+
+| module | n | resolved | median actions |
+|---|---:|---:|---:|
+| `ranges` | 14 | **21%** | 9.0 |
+| `version` | 5 | 100% | 9.0 |
+| `_parser` | 5 | 100% | 9.0 |
+| `direct_url` | 3 | 100% | 9.0 |
+| `_musllinux` | 2 | 100% | 9.5 |
+| `_manylinux` | 1 | 0% | 9.0 |
+
+`ranges` fails eleven of fourteen. Everything else resolves nearly everything.
+
+**The 60% baseline was the proportion of `ranges` tasks in the sample, not a difficulty level the
+budget produced.** Phase 78's budget ladder — 100% at 25 turns, 93% at 12, 60% at 9 — was reported as
+the budget biting harder. Some of it is that. How much is unrecoverable, because the pools at each
+rung were not the same tasks and their module mixes were never recorded.
+
+## What it does to the condition comparisons
+
+Less than it looks, and the reason matters. `none`, `random`, `spread` and `similarity` ran on
+*identical task lists*, so every condition carried the same module mix and the orderings between them
+are not confounded by it. What is confounded is any comparison *across* pools or rungs — which is
+exactly the comparison a peer session was about to make between a local pool and a cross-module one
+whose round one sits 8 of 10 in `_parser`, a module that went 5 for 5 here.
+
+## What it does to the design of anything further
+
+A powered pool drawn without stratifying by module reproduces this at larger n rather than resolving
+it. Eighty tasks split unevenly would be comparing module mixes wearing condition labels. Equal
+numbers per module, or the count does not help.
+
+## Interpretation boundary
+
+One run, one budget, 28 tasks, and the per-module cells are tiny — `_manylinux` is one task and
+`_musllinux` two, so their 0% and 100% are single observations. The finding rests on `ranges` at
+14 tasks and 21% against everything else, which is large enough to act on and not large enough to
+rank the easy modules against each other.
