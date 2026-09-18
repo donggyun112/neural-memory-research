@@ -5255,3 +5255,70 @@ control the peer proposed and I did not run — "own-far", a gradient from a muc
 the same trajectory — was only worth the extra pass if the result resolved positive, and it did not.
 If anyone revisits this, note that an unresolved own-over-foreign makes that control moot rather than
 outstanding.
+
+# Phase 84: the turns go on orientation, not on finding the bug
+
+Phases 81 and 82 were both inferred from structure rather than from behaviour — 81 from the fact that
+failures exhausted the budget, 82 from counting how many tasks name their own module in the failing
+test path. The action logs from the 9-turn run survived, so the inference is checkable.
+
+Twenty-eight `none` runs at a 9-turn budget:
+
+| | |
+|---|---:|
+| first action is a shell command | 26 of 28 |
+| ran the whole suite within the first two actions | 6 |
+| edited anything at all | 17 |
+| first edit arrives at action (median) | **6** |
+
+**Eleven runs never edited a line.** The seventeen that did spent a median of six actions before the
+first edit, out of nine.
+
+## What those six actions are
+
+Two runs in full, up to the first edit:
+
+```
+_musllinux-28                              _musllinux-53
+1. find . -name "*.py" | head -20          1. Read <a source file>
+2. find . -name "*musllinux*"              2. Read <another>
+3. pytest tests/test_musllinux.py          3. find <the workspace>
+4. Read <the source>                       4. find <again>
+5. Read <again>                            5. Read <a third>
+6. Edit                                    6. pytest <one named test>
+                                           7. Edit
+```
+
+The agent already knows the module — the failing test named it. What it does not know is the layout of
+a repository it has never seen. The turns go on `find`, on locating files, on reading them once found.
+**It is orienting, not searching for the defect.**
+
+## Which makes 81 and 82 both half right
+
+Phase 81 called the budget a constraint on execution rather than search, because the defect's location
+arrives with the prompt. True about the location, wrong about what fills the turns: six actions before
+the first edit is not execution. Phase 82 established that 87% of tasks name their own module, which
+holds — but naming the module does not tell the agent where the module is, and that gap is most of the
+budget.
+
+The honest description is a third thing neither phase said: **the budget mostly measures the cost of
+orienting in an unfamiliar repository.**
+
+## Why this matters for what a memory could do
+
+It relocates the only place a memory has ever helped here. Random note blocks bought 0.64 actions in
+the 9-turn comparison, and the notes were things like `Bash uv run ... pytest tests -q 2>&1 | tail -20`
+and `find src -type f -name "*.py"` — procedure and layout, not anything about a defect. That is
+exactly the phase these logs show consuming the budget.
+
+So the one measured gain was a memory shortening orientation, which is real but small and has a
+ceiling: an agent only needs telling where `src/` is once. It also means avoid-lines mined from
+failures — the live hypothesis — are aimed at a phase that these tasks barely contain, and a
+cross-module pool changes that by making the defect's location genuinely unknown.
+
+## Interpretation boundary
+
+Twenty-eight runs, one condition, one repository, one budget. `find` may be cheap in a repository the
+model has seen during training and expensive here for reasons that do not generalise. And these are
+the runs at 9 turns specifically — orientation may be a smaller share of a 25-turn budget, which would
+mean the budget ladder was changing what it measured as it descended rather than only how much.
