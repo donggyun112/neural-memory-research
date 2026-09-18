@@ -24,6 +24,22 @@ beyond what is written here.
 
 ## The one rule that matters
 
-State what would falsify a claim before running the thing that tests it. This
-session has retracted three results in a day for want of that — a control that
-cannot fail the way the treatment fails is not a control.
+State what would falsify a claim, **and how many observations that requires**,
+before running the thing that tests it.
+
+The first half is about controls: one that cannot fail the way the treatment
+fails is not a control, and this repo has retracted results for want of that.
+
+The second half was added after four separate mistakes turned out to be the same
+mistake. Each had a falsification condition stated in advance and each was run
+before enough samples existed to trust the number it produced — a 16-position
+pilot whose sign reversed at 280, a difficulty read off 2 tasks, a spectrum off
+20 stimuli that inverted at 120, and a pilot reported as a signal before its full
+run. None of those was a wrong falsification. All of them were right
+falsifications answered too early.
+
+In practice: before running, name the smallest effect you would act on, and do
+not report a number until the interval is narrower than that effect. An interval
+wide enough to contain both "helps a lot" and "hurts a lot" has not measured
+anything, however clean its point estimate looks — and the point estimate is
+exactly what is tempting to send while the run finishes.
