@@ -98,3 +98,31 @@ def test_a_green_suite_with_edited_tests_is_not_a_repair():
         actions=4,
     )
     assert trial.broken_after == 0 and not trial.resolved
+
+
+def test_a_run_that_never_reached_the_model_is_not_a_failed_repair(tmp_path):
+    """A spend limit arrives as a successful result carrying a refusal.
+
+    The run records zero tool calls and a red suite, which is exactly what an
+    agent that tried and got nowhere records. Fourteen of fifteen runs in one
+    condition were counted as repair failures this way.
+    """
+    from run_repair_trials import refusal
+
+    transcript = tmp_path / "t.jsonl"
+    transcript.write_text(
+        json.dumps(
+            {
+                "type": "result",
+                "subtype": "success",
+                "result": "You've hit your org's monthly spend limit · run /usage-credits",
+            }
+        )
+        + "\n"
+    )
+    assert "spend limit" in refusal(transcript)
+
+    worked = tmp_path / "w.jsonl"
+    worked.write_text(json.dumps({"type": "result", "result": "Fixed the comparison."}) + "\n")
+    assert refusal(worked) == ""
+    assert refusal(tmp_path / "missing.jsonl") == ""

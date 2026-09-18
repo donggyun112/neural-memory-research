@@ -89,6 +89,28 @@ def tool_calls(transcript: Path, limit: int = 240) -> list[str]:
     return calls
 
 
+REFUSALS = ("spend limit", "usage limit", "rate limit", "Credit balance", "authentication_error")
+
+
+def refusal(transcript: Path) -> str:
+    """The message a run got instead of doing the work, if it got one."""
+    if not transcript.exists():
+        return ""
+    for line in transcript.read_text(errors="replace").splitlines():
+        # No substring prefilter here: it would depend on whether the writer put
+        # a space after the colon, and the guard must not turn on formatting.
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict) or event.get("type") != "result":
+            continue
+        text = str(event.get("result", ""))
+        if any(mark.lower() in text.lower() for mark in REFUSALS):
+            return text[:200]
+    return ""
+
+
 def prepare(source: Path, workspace: Path, task: dict) -> Path:
     """A fresh copy of the repository with the defect applied."""
     if workspace.exists():
@@ -202,6 +224,15 @@ def main() -> None:
                 pass
         elapsed = time.time() - started
         calls = tool_calls(transcript)
+        # A run that never reached the model records zero tool calls and a clean
+        # failure, which is indistinguishable from an agent that tried and got
+        # nowhere. Spend limits and auth errors both arrive that way.
+        refused = refusal(transcript)
+        if refused:
+            raise SystemExit(
+                f"{task['name']}: the agent never ran -- {refused}\n"
+                f"Results so far are in {args.output}; rerun when this clears."
+            )
 
         after, complete = failing_tests(workspace, args.tests, args.timeout)
         edited = (workspace / task["path"]).read_text().splitlines()

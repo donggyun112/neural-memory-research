@@ -57,7 +57,8 @@ effect, so this is "not detected", not "not there". — *open*
 read time, which is the inverse of what the fly does: dopamine decides what is
 written at all, and there is no search later. Storing only the moments an outcome
 marked as mattering — in particular failures, which the current pipeline discards
-— has never been tried here. — *open*
+— has never been tried here. — *claimed by neural-memory-research-6d, 2026-09-19,
+design in board/003-write-time-selection.md*
 
 **Does keymem's own benchmark need a random control?** Its BENCHMARKS.md reports
 graph traversal at 63% against flat semantic at 53%, with no random-selection
