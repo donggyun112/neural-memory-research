@@ -5100,3 +5100,47 @@ alongside its good ones — that is the fly's own broadcast-dopamine structure r
 introduced error, but it means this says nothing about per-action credit. And "resemblance is empty"
 is a claim about resemblance, not about memory: what has never been tried here is selection at write
 time, storing only what an outcome marked as mattering.
+
+# Phase 81: the budget ladder was measuring speed, not search
+
+A peer session building on this harness found its task pool solved 20/20 at 12 turns and 15/15 at 9,
+with median action counts sitting at the budget rather than under it. Not turn-starved — solved
+directly. The diagnosis was not a budget one: `run_repair_trials.py` hands the agent the failing test
+names by default, and a one-line mutation is localised the instant a traceback points at it.
+
+**Every budget run in phases 78 and the 9-turn experiment ran without `--blind`.** The flag exists and
+was tested early, on two tasks, where it changed nothing — a sample that could not have shown anything,
+which is the fourth entry in this session's small-sample list.
+
+## What that does to the numbers
+
+Phase 78 recorded that every round-one failure ran out of turns rather than reaching a wrong
+conclusion, and framed that as the endpoint having the right shape: a budget-constrained search, and
+shortening search is the whole of what a memory of past actions could buy.
+
+The shape is right and the reading was too generous. If the defect's location arrives free with the
+prompt, then what the budget constrains is not search — it is the number of steps between reading the
+traceback and typing the fix. The 9-turn result stands as measured (none 18/30, random ahead by 0.64
+actions, selection behind random by 0.46) but it measures **how quickly an agent executes a known
+repair**, not whether a memory helps it find one.
+
+That is a weaker claim than the one phase 78 made, and it weakens what the memory conditions were
+being asked to improve. Twelve lines of past tool calls plausibly shave a step off executing a repair;
+there was never much reason to think they would, and less reason than the writeup implied.
+
+## What survives
+
+The ordering does. `similarity` and `spread` costing 0.46 actions against `random` is a comparison
+between conditions on identical tasks with identical budgets, and nothing about the difficulty source
+touches it. Phase 80's conclusion about the resemblance family rests on three mechanisms, two of which
+never used this harness.
+
+What does not survive is the framing that the repair endpoint was measuring search. It was measuring
+execution under a clock, on tasks whose answer was in the prompt.
+
+## Interpretation boundary
+
+Unmeasured: whether `--blind` changes any of it. The flag was exercised on two tasks and nothing else,
+and the peer is now running their pool blind. If blind tasks turn out to be genuinely search-bound,
+the 9-turn comparison is worth repeating there — the conditions might order differently when the
+memory has something to be useful about.
