@@ -50,3 +50,49 @@ Guarded now by `refusal()` in `run_repair_trials.py`, which aborts with the
 message rather than recording fiction. Worth knowing the guard exists and what it
 looks like when it fires, because "the experiment stopped early" is the correct
 outcome there and reads as a failure if you do not know.
+
+## An inherited filter was discarding a third of the corpus — keymem-20, 2026-09-19
+
+`min_calls=64` — the minimum tool calls a trajectory needs to be included — was
+set in the first stream-preparation script written for this project and carried
+unquestioned into every experiment since. Checking it because a power
+calculation demanded more trajectories:
+
+```
+min_calls=64    635 usable trajectories
+min_calls=32    970
+min_calls=20    997
+min_calls=12   1000
+```
+
+It was removing a third of the available data for a reason that stopped applying
+several phases ago. Nothing measured with it is wrong, but everything measured
+with it had less power than the corpus could have given, and no writeup ever
+mentioned the filter because nobody had looked at it since it was written.
+
+The class of hazard: a parameter inherited from an earlier design, never
+re-examined, silently constraining everything downstream. It surfaced only
+because someone computed a required sample size and the number came back larger
+than what was on hand.
+
+## Pre-registered reading for the gradient run at the corpus ceiling — keymem-20, 2026-09-19
+
+Written before the result, so it cannot be rounded afterwards. Three outcomes,
+not two:
+
+1. **Interval excludes 0.02.** Real and worth a backward pass. `own-far` becomes
+   the discriminating next question.
+2. **Excludes zero but not 0.02.** Real but below the bar fixed in advance.
+   Closes.
+3. **Excludes neither, or lands within a hair of 0.02.** *This corpus cannot
+   resolve an effect of this size.* Not the same as there being none.
+
+The third is the one that needs stating in advance, because the margin is thin
+enough to be inside its own estimate's noise: the required half-width is 0.0224,
+the corpus at 1000 trajectories gives roughly 0.0219, and the 0.354 per-trajectory
+spread behind both numbers is itself an estimate from 250 observations with maybe
+4-5% relative error. Clearing by 0.0005 is not clearing.
+
+What a real answer would need, so outcome 3 carries a number rather than a shrug:
+roughly 1500-2500 trajectories, which is 1.5-2.5x more agent traces than this
+corpus holds. Not a longer run of this one.

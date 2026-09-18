@@ -55,6 +55,41 @@ null on `taught` at the same n is "not detected," not "not there," and should
 not be written up as a second closed direction without either a larger n or an
 effect size big enough to clear that noise floor.
 
+## Task pool didn't test the hypothesis at any budget — the giveaway was structural
+
+Two rounds of the run were wasted on the same task pool before the actual cause
+surfaced. 25-turn round one resolved 20/20 (no failures to mine). 12/9-turn
+split still resolved 20/20 and 15/15. `--blind` (withholding failing-test names)
+still resolved most tasks, because the agent's own first pytest run prints them
+anyway — blind delays the giveaway by one turn, it doesn't remove it.
+
+keymem-20 found the real cause with no agent calls, from the task file alone:
+39 of 45 generated tasks have their failing tests in a file named after the
+mutated module (`specifiers.py` breaks, `test_specifiers.py` goes red). The
+location is free the moment the agent runs the suite, regardless of what the
+prompt withholds or how many turns it gets. Only 6/45 were cross-module (bug in
+one file, failing tests in another) — the shape of task where finding the
+defect is actual work.
+
+Added `--cross-module-only` to `make_repair_tasks.py` (filters on the same
+check: mutated module's stem not in any failing test path) and regenerated in a
+separate repo clone (`packaging-crossmod`, to avoid racing the in-flight local-
+pool trial via shared-directory mutation). Targeting 16 tasks at ~13% yield —
+hours of wall-clock, pure pytest, unaffected by the spend limit.
+
+**Seed caveat (keymem-20):** the crossmod generation reused the local pool's
+default seed, so it walks the same shuffle order — the crossmod pool is a
+subsequence of the local one, not an independent draw (same first hit,
+`_parser-385-0`, in both). Harmless for this design specifically, since the
+crossmod pool *replaces* the local one for testing the hypothesis rather than
+being compared against it as a second sample — but the two pools are not
+independent replicates if anyone ever treats them that way later.
+
+The local-pool round one (blind, 12 turns, 20/20 resolved) is kept as a
+documented negative: not "memory didn't help," but "this task shape cannot
+test whether memory helps regardless of runtime knobs," which is a different
+and more useful thing to have on record than a null result would have been.
+
 ## Status
 
 Blocked on one thing before touching code: `run_repair_trials.py`,
