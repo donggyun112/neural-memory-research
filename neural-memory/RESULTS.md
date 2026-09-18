@@ -5542,3 +5542,63 @@ One run, one budget, 28 tasks, and the per-module cells are tiny — `_manylinux
 `_musllinux` two, so their 0% and 100% are single observations. The finding rests on `ranges` at
 14 tasks and 21% against everything else, which is large enough to act on and not large enough to
 rank the easy modules against each other.
+
+# Phase 88: what makes a module hard is reaching its source at all
+
+Phase 87 found module predicts outcome almost completely — ranges at 21%, everything else near 100%.
+That is a lever if it is understood and a confound if it is not, so: what is different about ranges?
+
+Size alone does not explain it. version is 1,250 lines with a 4,386-line test suite and resolves 5 of
+5; ranges is 2,066 with 3,873 and resolves 3 of 14. _manylinux is 278 lines and resolves 0 of 1.
+
+Counting which source files each run actually opened does explain it:
+
+    ranges                            version
+      fixed  ranges-1403 {ranges: 3}    fixed version-175 {version: 2}
+      fixed  ranges-1433 {ranges: 2}    fixed version-181 {version: 2}
+      FAILED ranges-1678 {ranges: 1}    fixed version-196 {version: 7}
+      FAILED ranges-1802 {ranges: 3}    fixed version-314 {version: 2}
+      fixed  ranges-1974 {ranges: 2}    fixed version-496 {version: 2}
+      FAILED ranges-204  {}
+      FAILED ranges-247  {ranges: 3}
+      FAILED ranges-376  {ranges: 5}
+      FAILED ranges-541  {}
+      FAILED ranges-561  {ranges: 4}
+      FAILED ranges-614  {ranges: 1}
+      FAILED ranges-637  {}
+      FAILED ranges-818  {}
+
+**Four of the nine ranges failures never opened the source file at all.** Every version run opened it,
+two to seven times, and every one resolved.
+
+The sibling hypothesis — ranges.py and _ranges.py both exist, so perhaps the agent reads the wrong one
+— is wrong. Nothing opened _ranges.py. The problem is not choosing between two files, it is arriving
+at either.
+
+## Two distinct failure modes, not one
+
+ranges-376 opened the source **five times** and still failed. That is a different thing from
+ranges-637 never opening it. So the module is hard in two ways at once: harder to arrive at, and once
+arrived at, 2,066 lines in which a one-line mutation is not obvious.
+
+Phase 86's classification lumped both under "never edited". They are not the same, and only the second
+could ever produce something an avoid-line might name — reading the right file, forming a wrong idea
+about where in it the defect sits. Even that is thin: the agent never got as far as an edit to be
+wrong about.
+
+## What it offers as a difficulty lever
+
+A better one than cross-module filtering, and cheaper. Cross-module removes the giveaway, but a peer's
+pool suggests it may not make anything harder; module choice demonstrably does, and it is knowable
+before any agent runs. **Selecting tasks from large modules is a difficulty knob that costs no yield.**
+
+The cost is that it selects for one thing — big files — rather than difficulty in general, exactly the
+caveat raised against cross-module selection. Two pools differing in module composition are not
+comparable on resolve rate at all, which is phase 87's finding restated.
+
+## Interpretation boundary
+
+Per-module cells are small: _manylinux is one task, _musllinux two. The claim rests on ranges at
+fourteen against version at five, and on the file-opening counts, which are unambiguous. Whether
+"large module" or "this particular module" is the operative variable needs a pool built to test it —
+specifiers.py and markers.py are comparably large and were never sampled here.
