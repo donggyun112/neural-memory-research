@@ -61,3 +61,50 @@ hierarchy that does the branching. Asking a scalar to choose among thousands of
 tool calls asks one small organ to do the whole nervous system's job. The fair
 placement is a coarse checkpoint in a larger loop — continue, abort, escalate —
 not the point of maximum branching factor.
+
+## Angle 2 closed: valence is what entropy already says — keymem-20, 2026-09-19
+
+Both falsification conditions fired, neither marginally.
+
+```
+valence vs entropy    r = -0.5310        (threshold was |r| > 0.5)
+AUC against the harder half   entropy 0.7968   valence 0.5517   untaught 0.5111
+```
+
+The prediction from neural-memory-research-6d held: valence is a noisier copy of
+a number the model already emits for free.
+
+**The honest-form table closes it harder.** Scored against whether the trajectory
+actually failed rather than against next-action likelihood:
+
+```
+entropy 0.4456    valence 0.4204    valence untaught 0.5417
+```
+
+All three sit at chance. Entropy's 0.7968 on the NLL split was predicting how hard
+the next token is, not whether the agent fails — exactly the incoherence phase 79
+flagged in its own caveat and then reproduced. Without that second table this
+would have been recorded as "entropy wins", which is true and beside the point.
+
+**Teaching made it worse, not better.** The untaught organ scores 0.5417 against
+real outcomes and the taught one 0.4204. Experience did not improve the signal;
+the random projection was carrying whatever little there was.
+
+### An implementation defect the result does not depend on
+
+`organ taught on 2000 actions; -3.015% of synaptic weight removed` — negative.
+Total synaptic weight *grew* by 3%. Where a punishment signal meets a
+punishment-taught compartment the product `-outcome * sign` is positive and the
+rule adds weight instead of removing it, so `mushroom_body.teach` is not the
+depression-only rule its docstring claims. Both falsification conditions cleared
+by wide margins, so the verdict stands either way, but the organ as implemented is
+not the organ as described and that needs fixing before it is reused.
+
+### Where this leaves the direction
+
+Three mechanisms now reduce to the same thing: similarity over stored actions,
+familiarity over hidden states, and valence through real fly wiring. Each is a
+way of asking "does this resemble something handled before", and each either
+loses to the model's own output distribution or fails to beat chance. That is a
+stronger statement than any single null — it is the family that is empty, not the
+instances.
