@@ -5318,7 +5318,22 @@ cross-module pool changes that by making the defect's location genuinely unknown
 
 ## Interpretation boundary
 
-Twenty-eight runs, one condition, one repository, one budget. `find` may be cheap in a repository the
-model has seen during training and expensive here for reasons that do not generalise. And these are
-the runs at 9 turns specifically — orientation may be a smaller share of a 25-turn budget, which would
-mean the budget ladder was changing what it measured as it descended rather than only how much.
+Twenty-eight runs, one condition, one repository. `find` may be cheap in a repository the model has
+seen during training and expensive here for reasons that do not generalise.
+
+The worry that the ladder changed *what* it measured as it descended is answerable from the surviving
+logs at other budgets, and the answer is no:
+
+| run | budget | first edit (median) | share of budget | total actions |
+|---|---:|---:|---:|---:|
+| round two | 9 | 6.0 | 67% | 9.0 |
+| round two | 25 | 7.0 | 28% | 10.0 |
+| round one | 25 | 14.0 | 56% | 19.5 |
+
+The same tasks at 9 and at 25 turns reach the first edit at action 6 versus action 7. **Orientation
+costs what it costs; the budget only decides how much of itself that consumes.** The ladder measured
+one thing throughout and squeezed it, rather than swapping instruments as it descended.
+
+Round one needing 14 actions on the same 25-turn budget is the other half of that: its modules are
+different and larger, so orientation is set by which part of the repository a task sits in, not by
+how many turns the agent is given.
